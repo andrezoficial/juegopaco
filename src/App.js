@@ -1188,6 +1188,36 @@ const Game = () => {
           </button>
         </div>
       )}
+      
+      {/* Pie de página con créditos */}
+      <footer style={{
+        marginTop: '30px',
+        color: 'white',
+        textAlign: 'center',
+        fontSize: Math.min(14, window.innerWidth / 35) + 'px',
+        opacity: 0.8,
+        padding: '10px',
+        width: '100%'
+      }}>
+        <p style={{ margin: '5px 0' }}>
+          Desarrollado por{' '}
+          <a 
+            href="https://github.com/AndrezOficial" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{
+              color: '#ffeb3b',
+              textDecoration: 'none',
+              fontWeight: 'bold'
+            }}
+          >
+            AndrezOficial
+          </a>
+        </p>
+        <p style={{ margin: '5px 0', fontSize: '0.9em' }}>
+          ¡Disfruta del juego! 🎮
+        </p>
+      </footer>
     </div>
   );
 };
