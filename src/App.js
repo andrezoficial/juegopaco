@@ -9,9 +9,13 @@ const Game = () => {
   const [combo, setCombo] = useState(1);
   const [showCombo, setShowCombo] = useState(false);
   const [comboPosition, setComboPosition] = useState({ x: 0, y: 0 });
-  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 400 });
+  const [canvasSize, setCanvasSize] = useState({ 
+    width: typeof window !== 'undefined' ? Math.min(800, window.innerWidth) : 800, 
+    height: typeof window !== 'undefined' ? Math.min(400, window.innerHeight * 0.8) : 400 
+  });
   const [showMobileControls, setShowMobileControls] = useState(false);
-  const [backgroundTheme, setBackgroundTheme] = useState('day'); // 'day' or 'night'
+  const [backgroundTheme, setBackgroundTheme] = useState('day');
+  const [isFullScreen, setIsFullScreen] = useState(false);
   
   const playerRef = useRef({
     x: 100,
@@ -43,6 +47,54 @@ const Game = () => {
   const activePowerUpsRef = useRef(new Set());
   const touchStartXRef = useRef(0);
   const touchStartYRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const lastTouchXRef = useRef(0);
+
+  // Detectar si es móvil
+  const isMobile = typeof navigator !== 'undefined' ? 
+    /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) : false;
+
+  // Ajustar tamaño del canvas para full screen en móviles
+  const updateCanvasSize = useCallback(() => {
+    if (isMobile) {
+      // En móviles: usar toda la pantalla disponible
+      const width = window.innerWidth;
+      const height = window.innerHeight - 100; // Dejar espacio para el título
+      
+      setCanvasSize({
+        width: width,
+        height: height
+      });
+
+      // Ajustar posición del jugador para el nuevo tamaño
+      const scaleFactor = width / 800;
+      playerRef.current = {
+        ...playerRef.current,
+        x: 100 * scaleFactor,
+        y: height - 80, // Posición cerca del suelo
+        width: 50 * scaleFactor,
+        height: 45 * (height / 400)
+      };
+    } else {
+      // En desktop: tamaño fijo
+      const maxWidth = Math.min(800, window.innerWidth - 40);
+      const height = Math.min(400, maxWidth * 0.5);
+      
+      setCanvasSize({
+        width: maxWidth,
+        height: height
+      });
+
+      const scaleFactor = maxWidth / 800;
+      playerRef.current = {
+        ...playerRef.current,
+        x: 100 * scaleFactor,
+        y: (320 * height) / 400,
+        width: 50 * scaleFactor,
+        height: 45 * (height / 400)
+      };
+    }
+  }, [isMobile]);
 
   // 🔥 PRIMERO: Definir playSound antes que cualquier función que la use
   const playSound = useCallback((soundName) => {
@@ -88,30 +140,6 @@ const Game = () => {
     } catch (error) {
       console.log('Audio no disponible');
     }
-  }, []);
-
-  // Detectar si es móvil
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-  // Ajustar tamaño del canvas para móviles
-  const updateCanvasSize = useCallback(() => {
-    const maxWidth = Math.min(800, window.innerWidth - 40);
-    const height = Math.min(400, maxWidth * 0.5);
-    
-    setCanvasSize({
-      width: maxWidth,
-      height: height
-    });
-
-    // Ajustar posición del jugador para el nuevo tamaño
-    const scaleFactor = maxWidth / 800;
-    playerRef.current = {
-      ...playerRef.current,
-      x: 100 * scaleFactor,
-      y: (320 * height) / 400,
-      width: 50 * scaleFactor,
-      height: 45 * (height / 400)
-    };
   }, []);
 
   // Sistema de partículas
@@ -162,13 +190,10 @@ const Game = () => {
     }, powerUp.duration);
   }, [playSound, createParticles]);
 
-  // Controles táctiles para móviles
+  // Controles táctiles mejorados para móviles
   const handleTouchStart = useCallback((e) => {
     e.preventDefault();
     const touch = e.touches[0];
-    touchStartXRef.current = touch.clientX;
-    touchStartYRef.current = touch.clientY;
-    
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -176,31 +201,43 @@ const Game = () => {
     const x = touch.clientX - rect.left;
     const y = touch.clientY - rect.top;
     
-    // Área de salto (parte superior de la pantalla)
-    if (y < canvasSize.height / 2) {
-      if (!playerRef.current.isJumping) {
-        playerRef.current.velocityY = -12 * (canvasSize.height / 400);
-        playerRef.current.isJumping = true;
-        playSound('jump');
-        createParticles(
-          playerRef.current.x + playerRef.current.width/2, 
-          playerRef.current.y + playerRef.current.height, 
-          '#ffffff', 
-          3
-        );
-      }
+    touchStartXRef.current = x;
+    touchStartYRef.current = y;
+    lastTouchXRef.current = x;
+    isDraggingRef.current = true;
+    
+    // Salto al tocar en cualquier parte de la pantalla
+    if (!playerRef.current.isJumping) {
+      playerRef.current.velocityY = -12 * (canvasSize.height / 400);
+      playerRef.current.isJumping = true;
+      playSound('jump');
+      createParticles(
+        playerRef.current.x + playerRef.current.width/2, 
+        playerRef.current.y + playerRef.current.height, 
+        '#ffffff', 
+        3
+      );
     }
   }, [canvasSize.height, playSound, createParticles]);
 
   const handleTouchMove = useCallback((e) => {
     e.preventDefault();
-    const touch = e.touches[0];
-    const deltaX = touch.clientX - touchStartXRef.current;
+    if (!isDraggingRef.current) return;
     
-    if (Math.abs(deltaX) > 10) {
+    const touch = e.touches[0];
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    
+    const deltaX = x - lastTouchXRef.current;
+    lastTouchXRef.current = x;
+    
+    if (Math.abs(deltaX) > 2) {
       const player = playerRef.current;
       const scaleFactor = canvasSize.width / 800;
-      const moveSpeed = 5 * scaleFactor;
+      const moveSpeed = 8 * scaleFactor; // Más sensible en móvil
       
       if (deltaX > 0 && player.x < canvasSize.width - player.width) {
         player.x += moveSpeed;
@@ -209,121 +246,14 @@ const Game = () => {
         player.x -= moveSpeed;
         player.isMoving = true;
       }
-      
-      touchStartXRef.current = touch.clientX;
     }
   }, [canvasSize.width]);
 
   const handleTouchEnd = useCallback((e) => {
     e.preventDefault();
+    isDraggingRef.current = false;
     playerRef.current.isMoving = false;
   }, []);
-
-  // Botones virtuales para móviles
-  const MobileControls = () => (
-    <div style={{
-      position: 'absolute',
-      bottom: '20px',
-      left: '0',
-      right: '0',
-      display: 'flex',
-      justifyContent: 'space-between',
-      padding: '0 20px',
-      pointerEvents: 'none'
-    }}>
-      {/* Botones de movimiento */}
-      <div style={{
-        display: 'flex',
-        gap: '15px',
-        pointerEvents: 'auto'
-      }}>
-        <button
-          onTouchStart={(e) => {
-            e.preventDefault();
-            keysRef.current['ArrowLeft'] = true;
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            keysRef.current['ArrowLeft'] = false;
-          }}
-          style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '50%',
-            background: 'rgba(255,255,255,0.9)',
-            border: '3px solid #333',
-            fontSize: '24px',
-            cursor: 'pointer',
-            boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          ⬅️
-        </button>
-        <button
-          onTouchStart={(e) => {
-            e.preventDefault();
-            keysRef.current['ArrowRight'] = true;
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            keysRef.current['ArrowRight'] = false;
-          }}
-          style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '50%',
-            background: 'rgba(255,255,255,0.9)',
-            border: '3px solid #333',
-            fontSize: '24px',
-            cursor: 'pointer',
-            boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          ➡️
-        </button>
-      </div>
-      
-      {/* Botón de salto */}
-      <button
-        onTouchStart={(e) => {
-          e.preventDefault();
-          if (!playerRef.current.isJumping) {
-            playerRef.current.velocityY = -12 * (canvasSize.height / 400);
-            playerRef.current.isJumping = true;
-            playSound('jump');
-            createParticles(
-              playerRef.current.x + playerRef.current.width/2, 
-              playerRef.current.y + playerRef.current.height, 
-              '#ffffff', 
-              3
-            );
-          }
-        }}
-        style={{
-          width: '70px',
-          height: '70px',
-          borderRadius: '50%',
-          background: 'rgba(255,255,255,0.9)',
-          border: '3px solid #333',
-          fontSize: '20px',
-          cursor: 'pointer',
-          boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-          pointerEvents: 'auto',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-      >
-        ⬆️ SALTO
-      </button>
-    </div>
-  );
 
   // 🔥 AÑADIR: Función checkCollisions
   const checkCollisions = useCallback(() => {
@@ -975,27 +905,29 @@ const Game = () => {
     const scaledDeltaTime = deltaTime * timeScale;
     
     // Movimiento con teclado (para desktop)
-    player.isMoving = false;
-    if (keysRef.current['ArrowLeft'] && player.x > 0) {
-      player.x -= 5 * scale * timeScale;
-      player.isMoving = true;
-    }
-    if (keysRef.current['ArrowRight'] && player.x < canvasSize.width - player.width) {
-      player.x += 5 * scale * timeScale;
-      player.isMoving = true;
-    }
-    
-    // Salto con teclado
-    if ((keysRef.current['ArrowUp'] || keysRef.current[' ']) && !player.isJumping) {
-      player.velocityY = -12 * scale;
-      player.isJumping = true;
-      playSound('jump');
-      createParticles(
-        player.x + player.width/2, 
-        player.y + player.height, 
-        '#ffffff', 
-        3
-      );
+    if (!isMobile) {
+      player.isMoving = false;
+      if (keysRef.current['ArrowLeft'] && player.x > 0) {
+        player.x -= 5 * scale * timeScale;
+        player.isMoving = true;
+      }
+      if (keysRef.current['ArrowRight'] && player.x < canvasSize.width - player.width) {
+        player.x += 5 * scale * timeScale;
+        player.isMoving = true;
+      }
+      
+      // Salto con teclado
+      if ((keysRef.current['ArrowUp'] || keysRef.current[' ']) && !player.isJumping) {
+        player.velocityY = -12 * scale;
+        player.isJumping = true;
+        playSound('jump');
+        createParticles(
+          player.x + player.width/2, 
+          player.y + player.height, 
+          '#ffffff', 
+          3
+        );
+      }
     }
     
     // Gravedad
@@ -1095,14 +1027,14 @@ const Game = () => {
     draw();
     
     animationFrameRef.current = requestAnimationFrame(gameLoop);
-  }, [gameState, draw, checkCollisions, playSound, createParticles, createPowerUp, canvasSize]);
+  }, [gameState, draw, checkCollisions, playSound, createParticles, createPowerUp, canvasSize, isMobile]);
 
   // 🔥 AÑADIR: Función restartGame que faltaba
   const restartGame = useCallback(() => {
     const scale = canvasSize.width / 800;
     playerRef.current = {
       x: 100 * scale,
-      y: (320 * canvasSize.height) / 400,
+      y: isMobile ? canvasSize.height - 80 : (320 * canvasSize.height) / 400,
       width: 50 * scale,
       height: 45 * (canvasSize.height / 400),
       velocityY: 0,
@@ -1124,7 +1056,7 @@ const Game = () => {
     setShowCombo(false);
     setBackgroundTheme('day'); // Reset al tema diurno
     setGameState('playing');
-  }, [canvasSize]);
+  }, [canvasSize, isMobile]);
 
   // Efectos iniciales
   useEffect(() => {
@@ -1199,55 +1131,62 @@ const Game = () => {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: isMobile ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px',
+      justifyContent: isMobile ? 'flex-start' : 'center',
+      padding: isMobile ? '10px' : '20px',
       fontFamily: 'Arial, sans-serif',
       overflow: 'hidden',
-      position: 'relative'
+      position: 'relative',
+      width: '100vw',
+      height: isMobile ? '100vh' : 'auto'
     }}>
       {/* Título responsive */}
       <h1 style={{
         color: 'white',
-        fontSize: Math.min(48, window.innerWidth / 15) + 'px',
+        fontSize: isMobile ? Math.min(32, window.innerWidth / 12) + 'px' : Math.min(48, window.innerWidth / 15) + 'px',
         textShadow: '3px 3px 6px rgba(0,0,0,0.3)',
-        margin: '0 0 20px 0',
+        margin: isMobile ? '10px 0' : '0 0 20px 0',
         textAlign: 'center',
-        padding: '0 10px'
+        padding: '0 10px',
+        zIndex: 10
       }}>
-        {isMobile ? '🐱 Juego 🎮' : '🐱 PACO EN LA CIUDAD 🎮'}
+        {isMobile ? '🐱 PACO EN LA CIUDAD 🎮' : '🐱 PACO EN LA CIUDAD 🎮'}
       </h1>
       
       {gameState === 'playing' ? (
-        <div style={{ position: 'relative' }}>
+        <div style={{ 
+          position: 'relative',
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}>
           <canvas
             ref={canvasRef}
             width={canvasSize.width}
             height={canvasSize.height}
             style={{
-              border: '4px solid #333',
+              border: isMobile ? '2px solid #333' : '4px solid #333',
               borderRadius: '15px',
               background: 'white',
               boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
               maxWidth: '100%',
-              height: 'auto'
+              height: 'auto',
+              touchAction: 'none' // Importante para controles táctiles
             }}
           />
           
-          {/* Controles móviles */}
-          {showMobileControls && <MobileControls />}
-          
           {/* Instrucciones responsive */}
           <div style={{
-            marginTop: '15px',
+            marginTop: isMobile ? '10px' : '15px',
             color: 'white',
-            fontSize: Math.min(16, window.innerWidth / 30) + 'px',
+            fontSize: isMobile ? Math.min(14, window.innerWidth / 25) + 'px' : Math.min(16, window.innerWidth / 30) + 'px',
             textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
             background: 'rgba(255,255,255,0.2)',
-            padding: '10px 20px',
+            padding: '8px 16px',
             borderRadius: '20px',
             backdropFilter: 'blur(10px)',
             textAlign: 'center',
@@ -1255,8 +1194,8 @@ const Game = () => {
           }}>
             {isMobile ? (
               <div>
-                <div>←→ Movimiento | Toca arriba para saltar</div>
-                <div style={{ fontSize: '0.8em', opacity: 0.8, marginTop: '5px' }}>
+                <div>✨ Toca para saltar | Desliza para mover ✨</div>
+                <div style={{ fontSize: '0.8em', opacity: 0.8, marginTop: '3px' }}>
                   ¡Agarra la comida y evita los objetos que caen!
                 </div>
               </div>
@@ -1267,8 +1206,8 @@ const Game = () => {
               <div style={{ 
                 color: '#ffeb3b', 
                 fontWeight: 'bold', 
-                marginTop: '5px',
-                fontSize: Math.min(14, window.innerWidth / 35) + 'px'
+                marginTop: '3px',
+                fontSize: isMobile ? Math.min(12, window.innerWidth / 30) + 'px' : Math.min(14, window.innerWidth / 35) + 'px'
               }}>
                 ¡Modo Nocturno Desbloqueado! 🌙
               </div>
@@ -1278,41 +1217,42 @@ const Game = () => {
       ) : (
         <div style={{
           background: 'rgba(255, 255, 255, 0.95)',
-          padding: Math.min(40, window.innerWidth / 20) + 'px',
+          padding: isMobile ? Math.min(30, window.innerWidth / 15) + 'px' : Math.min(40, window.innerWidth / 20) + 'px',
           borderRadius: '20px',
           textAlign: 'center',
           boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
           maxWidth: '90vw',
-          width: '400px'
+          width: isMobile ? '85vw' : '400px',
+          marginTop: isMobile ? '20px' : '0'
         }}>
           <h2 style={{ 
-            fontSize: Math.min(36, window.innerWidth / 15) + 'px', 
+            fontSize: isMobile ? Math.min(28, window.innerWidth / 12) + 'px' : Math.min(36, window.innerWidth / 15) + 'px', 
             color: '#333', 
-            margin: '0 0 20px 0' 
+            margin: '0 0 15px 0' 
           }}>
             😿 Game Over
           </h2>
           <p style={{ 
-            fontSize: Math.min(24, window.innerWidth / 20) + 'px', 
+            fontSize: isMobile ? Math.min(20, window.innerWidth / 15) + 'px' : Math.min(24, window.innerWidth / 20) + 'px', 
             color: '#667eea', 
             fontWeight: 'bold', 
-            margin: '10px 0' 
+            margin: '8px 0' 
           }}>
             Puntos: {score}
           </p>
           <p style={{ 
-            fontSize: Math.min(18, window.innerWidth / 25) + 'px', 
+            fontSize: isMobile ? Math.min(16, window.innerWidth / 20) + 'px' : Math.min(18, window.innerWidth / 25) + 'px', 
             color: '#888', 
-            margin: '5px 0' 
+            margin: '4px 0' 
           }}>
             Récord: {highScore}
           </p>
           {score >= 150 && (
             <p style={{ 
-              fontSize: Math.min(16, window.innerWidth / 30) + 'px', 
+              fontSize: isMobile ? Math.min(14, window.innerWidth / 25) + 'px' : Math.min(16, window.innerWidth / 30) + 'px', 
               color: '#ff6b6b', 
               fontWeight: 'bold',
-              margin: '10px 0' 
+              margin: '8px 0' 
             }}>
               ¡Lograste el modo nocturno! 🌙
             </p>
@@ -1321,9 +1261,9 @@ const Game = () => {
           <button
             onClick={restartGame}
             style={{
-              marginTop: '30px',
-              padding: '15px 40px',
-              fontSize: Math.min(18, window.innerWidth / 25) + 'px',
+              marginTop: '25px',
+              padding: isMobile ? '12px 30px' : '15px 40px',
+              fontSize: isMobile ? Math.min(16, window.innerWidth / 20) + 'px' : Math.min(18, window.innerWidth / 25) + 'px',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               color: 'white',
               border: 'none',
@@ -1343,15 +1283,15 @@ const Game = () => {
       
       {/* Pie de página con créditos */}
       <footer style={{
-        marginTop: '30px',
+        marginTop: isMobile ? '15px' : '30px',
         color: 'white',
         textAlign: 'center',
-        fontSize: Math.min(14, window.innerWidth / 35) + 'px',
+        fontSize: isMobile ? Math.min(12, window.innerWidth / 30) + 'px' : Math.min(14, window.innerWidth / 35) + 'px',
         opacity: 0.8,
-        padding: '10px',
+        padding: '8px',
         width: '100%'
       }}>
-        <p style={{ margin: '5px 0' }}>
+        <p style={{ margin: '3px 0' }}>
           Desarrollado por{' '}
           <a 
             href="https://github.com/AndrezOficial" 
@@ -1366,8 +1306,8 @@ const Game = () => {
             AndrezOficial
           </a>
         </p>
-        <p style={{ margin: '5px 0', fontSize: '0.9em' }}>
-          ¡Agarra la comida antes de que desaparezca! 🐟🥛
+        <p style={{ margin: '3px 0', fontSize: '0.9em' }}>
+          {isMobile ? 'Toca para saltar • Desliza para mover' : '¡Agarra la comida antes de que desaparezca! 🐟🥛'}
         </p>
       </footer>
     </div>
