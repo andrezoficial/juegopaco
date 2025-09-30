@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 const Game = () => {
   const canvasRef = useRef(null);
+  const gameContainerRef = useRef(null);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [gameState, setGameState] = useState('playing');
@@ -10,12 +11,10 @@ const Game = () => {
   const [showCombo, setShowCombo] = useState(false);
   const [comboPosition, setComboPosition] = useState({ x: 0, y: 0 });
   const [canvasSize, setCanvasSize] = useState({ 
-    width: typeof window !== 'undefined' ? Math.min(800, window.innerWidth) : 800, 
-    height: typeof window !== 'undefined' ? Math.min(400, window.innerHeight * 0.8) : 400 
+    width: 800, 
+    height: 400 
   });
-  const [showMobileControls, setShowMobileControls] = useState(false);
   const [backgroundTheme, setBackgroundTheme] = useState('day');
-  const [isFullScreen, setIsFullScreen] = useState(false);
   
   const playerRef = useRef({
     x: 100,
@@ -46,7 +45,6 @@ const Game = () => {
   const powerUpsRef = useRef([]);
   const activePowerUpsRef = useRef(new Set());
   const touchStartXRef = useRef(0);
-  const touchStartYRef = useRef(0);
   const isDraggingRef = useRef(false);
   const lastTouchXRef = useRef(0);
 
@@ -54,30 +52,35 @@ const Game = () => {
   const isMobile = typeof navigator !== 'undefined' ? 
     /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) : false;
 
-  // Ajustar tamaño del canvas para full screen en móviles
+  // Ajustar tamaño del canvas responsivamente
   const updateCanvasSize = useCallback(() => {
+    const container = gameContainerRef.current;
+    if (!container) return;
+
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    
+    // En móviles: usar casi toda la pantalla pero mantener relación de aspecto
     if (isMobile) {
-      // En móviles: usar toda la pantalla disponible
-      const width = window.innerWidth;
-      const height = window.innerHeight - 100; // Dejar espacio para el título
+      const maxWidth = Math.min(800, containerWidth - 20);
+      const height = Math.min(400, containerHeight * 0.7); // 70% del alto disponible
       
       setCanvasSize({
-        width: width,
+        width: maxWidth,
         height: height
       });
 
-      // Ajustar posición del jugador para el nuevo tamaño
-      const scaleFactor = width / 800;
+      const scaleFactor = maxWidth / 800;
       playerRef.current = {
         ...playerRef.current,
         x: 100 * scaleFactor,
-        y: height - 80, // Posición cerca del suelo
+        y: height - 80,
         width: 50 * scaleFactor,
         height: 45 * (height / 400)
       };
     } else {
-      // En desktop: tamaño fijo
-      const maxWidth = Math.min(800, window.innerWidth - 40);
+      // En desktop: tamaño fijo pero responsivo
+      const maxWidth = Math.min(800, containerWidth - 40);
       const height = Math.min(400, maxWidth * 0.5);
       
       setCanvasSize({
@@ -199,10 +202,8 @@ const Game = () => {
     
     const rect = canvas.getBoundingClientRect();
     const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
     
     touchStartXRef.current = x;
-    touchStartYRef.current = y;
     lastTouchXRef.current = x;
     isDraggingRef.current = true;
     
@@ -237,7 +238,7 @@ const Game = () => {
     if (Math.abs(deltaX) > 2) {
       const player = playerRef.current;
       const scaleFactor = canvasSize.width / 800;
-      const moveSpeed = 8 * scaleFactor; // Más sensible en móvil
+      const moveSpeed = 8 * scaleFactor;
       
       if (deltaX > 0 && player.x < canvasSize.width - player.width) {
         player.x += moveSpeed;
@@ -1061,8 +1062,7 @@ const Game = () => {
   // Efectos iniciales
   useEffect(() => {
     initAudio();
-    setShowMobileControls(isMobile);
-  }, [initAudio, isMobile]);
+  }, [initAudio]);
 
   // Ajustar tamaño inicial y en redimensionamiento
   useEffect(() => {
@@ -1081,6 +1081,10 @@ const Game = () => {
     if (isMobile) return;
     
     const handleKeyDown = (e) => {
+      // Prevenir scroll con teclas de flecha y espacio
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+        e.preventDefault();
+      }
       keysRef.current[e.key] = true;
     };
     
@@ -1104,11 +1108,24 @@ const Game = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
+    const preventDefault = (e) => e.preventDefault();
+    
+    // Prevenir gestos de zoom y scroll
+    document.addEventListener('touchmove', preventDefault, { passive: false });
+    document.addEventListener('gesturestart', preventDefault);
+    document.addEventListener('gesturechange', preventDefault);
+    document.addEventListener('gestureend', preventDefault);
+    
     canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
     
     return () => {
+      document.removeEventListener('touchmove', preventDefault);
+      document.removeEventListener('gesturestart', preventDefault);
+      document.removeEventListener('gesturechange', preventDefault);
+      document.removeEventListener('gestureend', preventDefault);
+      
       canvas.removeEventListener('touchstart', handleTouchStart);
       canvas.removeEventListener('touchmove', handleTouchMove);
       canvas.removeEventListener('touchend', handleTouchEnd);
@@ -1129,37 +1146,39 @@ const Game = () => {
   }, [gameState, gameLoop]);
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: isMobile ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: isMobile ? 'flex-start' : 'center',
-      padding: isMobile ? '10px' : '20px',
-      fontFamily: 'Arial, sans-serif',
-      overflow: 'hidden',
-      position: 'relative',
-      width: '100vw',
-      height: isMobile ? '100vh' : 'auto'
-    }}>
+    <div 
+      ref={gameContainerRef}
+      style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: isMobile ? '10px' : '20px',
+        fontFamily: 'Arial, sans-serif',
+        overflow: 'hidden',
+        position: 'relative',
+        width: '100vw',
+        height: '100vh'
+      }}
+    >
       {/* Título responsive */}
       <h1 style={{
         color: 'white',
-        fontSize: isMobile ? Math.min(32, window.innerWidth / 12) + 'px' : Math.min(48, window.innerWidth / 15) + 'px',
+        fontSize: isMobile ? '24px' : '36px',
         textShadow: '3px 3px 6px rgba(0,0,0,0.3)',
-        margin: isMobile ? '10px 0' : '0 0 20px 0',
+        margin: isMobile ? '5px 0 15px 0' : '0 0 20px 0',
         textAlign: 'center',
         padding: '0 10px',
         zIndex: 10
       }}>
-        {isMobile ? '🐱 PACO EN LA CIUDAD 🎮' : '🐱 PACO EN LA CIUDAD 🎮'}
+        🐱 PACO EN LA CIUDAD 🎮
       </h1>
       
       {gameState === 'playing' ? (
         <div style={{ 
           position: 'relative',
-          width: '100%',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center'
@@ -1169,24 +1188,24 @@ const Game = () => {
             width={canvasSize.width}
             height={canvasSize.height}
             style={{
-              border: isMobile ? '2px solid #333' : '4px solid #333',
-              borderRadius: '15px',
+              border: '3px solid #333',
+              borderRadius: '10px',
               background: 'white',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+              boxShadow: '0 8px 25px rgba(0,0,0,0.3)',
               maxWidth: '100%',
               height: 'auto',
-              touchAction: 'none' // Importante para controles táctiles
+              touchAction: 'none'
             }}
           />
           
           {/* Instrucciones responsive */}
           <div style={{
-            marginTop: isMobile ? '10px' : '15px',
+            marginTop: '15px',
             color: 'white',
-            fontSize: isMobile ? Math.min(14, window.innerWidth / 25) + 'px' : Math.min(16, window.innerWidth / 30) + 'px',
+            fontSize: isMobile ? '14px' : '16px',
             textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
             background: 'rgba(255,255,255,0.2)',
-            padding: '8px 16px',
+            padding: '10px 20px',
             borderRadius: '20px',
             backdropFilter: 'blur(10px)',
             textAlign: 'center',
@@ -1195,7 +1214,7 @@ const Game = () => {
             {isMobile ? (
               <div>
                 <div>✨ Toca para saltar | Desliza para mover ✨</div>
-                <div style={{ fontSize: '0.8em', opacity: 0.8, marginTop: '3px' }}>
+                <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
                   ¡Agarra la comida y evita los objetos que caen!
                 </div>
               </div>
@@ -1206,8 +1225,8 @@ const Game = () => {
               <div style={{ 
                 color: '#ffeb3b', 
                 fontWeight: 'bold', 
-                marginTop: '3px',
-                fontSize: isMobile ? Math.min(12, window.innerWidth / 30) + 'px' : Math.min(14, window.innerWidth / 35) + 'px'
+                marginTop: '5px',
+                fontSize: isMobile ? '12px' : '14px'
               }}>
                 ¡Modo Nocturno Desbloqueado! 🌙
               </div>
@@ -1217,42 +1236,41 @@ const Game = () => {
       ) : (
         <div style={{
           background: 'rgba(255, 255, 255, 0.95)',
-          padding: isMobile ? Math.min(30, window.innerWidth / 15) + 'px' : Math.min(40, window.innerWidth / 20) + 'px',
-          borderRadius: '20px',
+          padding: isMobile ? '25px' : '40px',
+          borderRadius: '15px',
           textAlign: 'center',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
           maxWidth: '90vw',
-          width: isMobile ? '85vw' : '400px',
-          marginTop: isMobile ? '20px' : '0'
+          width: isMobile ? '300px' : '400px'
         }}>
           <h2 style={{ 
-            fontSize: isMobile ? Math.min(28, window.innerWidth / 12) + 'px' : Math.min(36, window.innerWidth / 15) + 'px', 
+            fontSize: isMobile ? '24px' : '32px', 
             color: '#333', 
             margin: '0 0 15px 0' 
           }}>
             😿 Game Over
           </h2>
           <p style={{ 
-            fontSize: isMobile ? Math.min(20, window.innerWidth / 15) + 'px' : Math.min(24, window.innerWidth / 20) + 'px', 
+            fontSize: isMobile ? '18px' : '24px', 
             color: '#667eea', 
             fontWeight: 'bold', 
-            margin: '8px 0' 
+            margin: '10px 0' 
           }}>
             Puntos: {score}
           </p>
           <p style={{ 
-            fontSize: isMobile ? Math.min(16, window.innerWidth / 20) + 'px' : Math.min(18, window.innerWidth / 25) + 'px', 
+            fontSize: isMobile ? '16px' : '18px', 
             color: '#888', 
-            margin: '4px 0' 
+            margin: '5px 0' 
           }}>
             Récord: {highScore}
           </p>
           {score >= 150 && (
             <p style={{ 
-              fontSize: isMobile ? Math.min(14, window.innerWidth / 25) + 'px' : Math.min(16, window.innerWidth / 30) + 'px', 
+              fontSize: isMobile ? '14px' : '16px', 
               color: '#ff6b6b', 
               fontWeight: 'bold',
-              margin: '8px 0' 
+              margin: '10px 0' 
             }}>
               ¡Lograste el modo nocturno! 🌙
             </p>
@@ -1261,16 +1279,16 @@ const Game = () => {
           <button
             onClick={restartGame}
             style={{
-              marginTop: '25px',
-              padding: isMobile ? '12px 30px' : '15px 40px',
-              fontSize: isMobile ? Math.min(16, window.innerWidth / 20) + 'px' : Math.min(18, window.innerWidth / 25) + 'px',
+              marginTop: '20px',
+              padding: '12px 30px',
+              fontSize: isMobile ? '16px' : '18px',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               color: 'white',
               border: 'none',
-              borderRadius: '30px',
+              borderRadius: '25px',
               cursor: 'pointer',
               fontWeight: 'bold',
-              boxShadow: '0 5px 15px rgba(0,0,0,0.3)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
               transition: 'all 0.3s ease',
               width: '100%',
               maxWidth: '250px'
@@ -1283,15 +1301,15 @@ const Game = () => {
       
       {/* Pie de página con créditos */}
       <footer style={{
-        marginTop: isMobile ? '15px' : '30px',
+        marginTop: '20px',
         color: 'white',
         textAlign: 'center',
-        fontSize: isMobile ? Math.min(12, window.innerWidth / 30) + 'px' : Math.min(14, window.innerWidth / 35) + 'px',
+        fontSize: isMobile ? '12px' : '14px',
         opacity: 0.8,
-        padding: '8px',
+        padding: '10px',
         width: '100%'
       }}>
-        <p style={{ margin: '3px 0' }}>
+        <p style={{ margin: '5px 0' }}>
           Desarrollado por{' '}
           <a 
             href="https://github.com/AndrezOficial" 
@@ -1306,7 +1324,7 @@ const Game = () => {
             AndrezOficial
           </a>
         </p>
-        <p style={{ margin: '3px 0', fontSize: '0.9em' }}>
+        <p style={{ margin: '5px 0', fontSize: isMobile ? '11px' : '13px' }}>
           {isMobile ? 'Toca para saltar • Desliza para mover' : '¡Agarra la comida antes de que desaparezca! 🐟🥛'}
         </p>
       </footer>
