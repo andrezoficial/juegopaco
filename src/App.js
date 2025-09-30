@@ -1086,7 +1086,7 @@ const Game = () => {
         textAlign: 'center',
         padding: '0 10px'
       }}>
-        {isMobile ? '🐱 Juego 🎮' : '🐱 Aventura Gatuna 🎮'}
+        {isMobile ? '🐱 Juego 🎮' : '🐱 PACO EN LA CIUDAD 🎮'}
       </h1>
       
       {gameState === 'playing' ? (
