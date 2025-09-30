@@ -11,6 +11,7 @@ const Game = () => {
   const [comboPosition, setComboPosition] = useState({ x: 0, y: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 400 });
   const [showMobileControls, setShowMobileControls] = useState(false);
+  const [backgroundTheme, setBackgroundTheme] = useState('day'); // 'day' or 'night'
   
   const playerRef = useRef({
     x: 100,
@@ -330,7 +331,7 @@ const Game = () => {
     const currentTime = Date.now();
     
     // Colisión con comida
-    foodsRef.current.forEach(food => {
+    foodsRef.current.forEach((food, index) => {
       if (collectedFoodsRef.current.has(food.id)) return;
       
       const dx = player.x + player.width/2 - food.x;
@@ -338,7 +339,9 @@ const Game = () => {
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance < 25) {
+        // Marcar como recolectada y eliminar del array
         collectedFoodsRef.current.add(food.id);
+        foodsRef.current.splice(index, 1);
         
         // Sistema de combo
         if (currentTime - lastComboTimeRef.current < 2000) {
@@ -359,7 +362,14 @@ const Game = () => {
         const comboMultiplier = Math.min(combo, 5);
         const totalPoints = basePoints * multiplier * comboMultiplier;
         
-        setScore(prev => prev + totalPoints);
+        setScore(prev => {
+          const newScore = prev + totalPoints;
+          // Cambiar a tema nocturno al alcanzar 150 puntos
+          if (newScore >= 150 && backgroundTheme === 'day') {
+            setBackgroundTheme('night');
+          }
+          return newScore;
+        });
         
         // Sonido y partículas
         if (combo > 2) {
@@ -373,20 +383,20 @@ const Game = () => {
     });
     
     // Colisión con power-ups
-    powerUpsRef.current.forEach(powerUp => {
+    powerUpsRef.current.forEach((powerUp, index) => {
       const dx = player.x + player.width/2 - powerUp.x;
       const dy = player.y + player.height/2 - powerUp.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance < 25) {
         applyPowerUp(powerUp);
-        powerUpsRef.current = powerUpsRef.current.filter(p => p.id !== powerUp.id);
+        powerUpsRef.current.splice(index, 1);
       }
     });
     
     // Colisión con obstáculos (omitir si tiene escudo)
     if (!activePowerUpsRef.current.has('shield')) {
-      obstaclesRef.current.forEach(obstacle => {
+      obstaclesRef.current.forEach((obstacle, index) => {
         if (hitObstaclesRef.current.has(obstacle.id)) return;
         
         if (
@@ -413,7 +423,7 @@ const Game = () => {
         }
       });
     }
-  }, [score, combo, playSound, createParticles, applyPowerUp]);
+  }, [score, combo, playSound, createParticles, applyPowerUp, backgroundTheme]);
 
   // Funciones de dibujo (drawFood, drawObstacle, etc.)
   const drawFood = useCallback((ctx, food) => {
@@ -478,44 +488,97 @@ const Game = () => {
     const scale = canvasSize.width / 800;
     
     if (obstacle.type === 'dog') {
-      ctx.fillStyle = '#8b4513';
-      ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+      // Perro cayendo del cielo (rotado)
+      ctx.save();
+      ctx.translate(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2);
+      ctx.rotate(Math.PI); // Rotar 180 grados para que caiga boca abajo
       
-      ctx.fillRect(obstacle.x + obstacle.width - 15 * scale, obstacle.y - 10 * scale, 15 * scale, 15 * scale);
+      ctx.fillStyle = '#8b4513';
+      ctx.fillRect(-obstacle.width/2, -obstacle.height/2, obstacle.width, obstacle.height);
+      
+      ctx.fillRect(-obstacle.width/2 + 15 * scale, -obstacle.height/2 - 10 * scale, 15 * scale, 15 * scale);
       
       ctx.fillStyle = '#a0522d';
-      ctx.fillRect(obstacle.x + obstacle.width - 18 * scale, obstacle.y - 8 * scale, 5 * scale, 12 * scale);
-      ctx.fillRect(obstacle.x + obstacle.width - 5 * scale, obstacle.y - 8 * scale, 5 * scale, 12 * scale);
+      ctx.fillRect(-obstacle.width/2 + 18 * scale, -obstacle.height/2 - 8 * scale, 5 * scale, 12 * scale);
+      ctx.fillRect(-obstacle.width/2 + 5 * scale, -obstacle.height/2 - 8 * scale, 5 * scale, 12 * scale);
       
       ctx.fillStyle = '#000000';
       ctx.beginPath();
-      ctx.arc(obstacle.x + obstacle.width - 8 * scale, obstacle.y - 5 * scale, 2 * scale, 0, Math.PI * 2);
+      ctx.arc(-obstacle.width/2 + 8 * scale, -obstacle.height/2 - 5 * scale, 2 * scale, 0, Math.PI * 2);
       ctx.fill();
       
       ctx.fillStyle = '#8b4513';
       ctx.beginPath();
-      ctx.moveTo(obstacle.x, obstacle.y + 5 * scale);
-      ctx.lineTo(obstacle.x - 10 * scale, obstacle.y - 5 * scale);
-      ctx.lineTo(obstacle.x, obstacle.y);
+      ctx.moveTo(-obstacle.width/2, -obstacle.height/2 + 5 * scale);
+      ctx.lineTo(-obstacle.width/2 - 10 * scale, -obstacle.height/2 - 5 * scale);
+      ctx.lineTo(-obstacle.width/2, -obstacle.height/2);
       ctx.fill();
       
-      ctx.fillRect(obstacle.x + 5 * scale, obstacle.y + obstacle.height, 8 * scale, 10 * scale);
-      ctx.fillRect(obstacle.x + obstacle.width - 13 * scale, obstacle.y + obstacle.height, 8 * scale, 10 * scale);
+      ctx.fillRect(-obstacle.width/2 + 5 * scale, -obstacle.height/2 + obstacle.height, 8 * scale, 10 * scale);
+      ctx.fillRect(-obstacle.width/2 + obstacle.width - 13 * scale, -obstacle.height/2 + obstacle.height, 8 * scale, 10 * scale);
+      
+      ctx.restore();
     } else if (obstacle.type === 'box') {
+      // Caja cayendo del cielo (con efecto de rotación)
+      ctx.save();
+      ctx.translate(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2);
+      const rotation = (Date.now() * 0.01) % (Math.PI * 2); // Rotación continua
+      ctx.rotate(rotation);
+      
       ctx.fillStyle = '#d2691e';
-      ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+      ctx.fillRect(-obstacle.width/2, -obstacle.height/2, obstacle.width, obstacle.height);
       
       ctx.fillStyle = '#8b4513';
-      ctx.fillRect(obstacle.x + 5 * scale, obstacle.y + 5 * scale, obstacle.width - 10 * scale, obstacle.height - 10 * scale);
+      ctx.fillRect(-obstacle.width/2 + 5 * scale, -obstacle.height/2 + 5 * scale, obstacle.width - 10 * scale, obstacle.height - 10 * scale);
       
       ctx.fillStyle = '#a0522d';
       ctx.beginPath();
-      ctx.moveTo(obstacle.x, obstacle.y);
-      ctx.lineTo(obstacle.x + 10 * scale, obstacle.y - 10 * scale);
-      ctx.lineTo(obstacle.x + obstacle.width + 10 * scale, obstacle.y - 10 * scale);
-      ctx.lineTo(obstacle.x + obstacle.width, obstacle.y);
+      ctx.moveTo(-obstacle.width/2, -obstacle.height/2);
+      ctx.lineTo(-obstacle.width/2 + 10 * scale, -obstacle.height/2 - 10 * scale);
+      ctx.lineTo(-obstacle.width/2 + obstacle.width + 10 * scale, -obstacle.height/2 - 10 * scale);
+      ctx.lineTo(-obstacle.width/2 + obstacle.width, -obstacle.height/2);
       ctx.closePath();
       ctx.fill();
+      
+      ctx.restore();
+    } else if (obstacle.type === 'bird') {
+      // Nuevo obstáculo: pájaro
+      ctx.save();
+      ctx.translate(obstacle.x, obstacle.y);
+      
+      // Cuerpo del pájaro
+      ctx.fillStyle = '#ff6b6b';
+      ctx.beginPath();
+      ctx.arc(0, 0, 12 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Alas (animadas)
+      const wingFlap = Math.sin(Date.now() * 0.01) * 5 * scale;
+      ctx.fillStyle = '#ff8e8e';
+      ctx.beginPath();
+      ctx.ellipse(-8 * scale, wingFlap, 8 * scale, 5 * scale, Math.PI/4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.ellipse(8 * scale, wingFlap, 8 * scale, 5 * scale, -Math.PI/4, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Pico
+      ctx.fillStyle = '#ffeb3b';
+      ctx.beginPath();
+      ctx.moveTo(12 * scale, 0);
+      ctx.lineTo(20 * scale, -3 * scale);
+      ctx.lineTo(20 * scale, 3 * scale);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Ojo
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(-5 * scale, -5 * scale, 2 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.restore();
     }
     
     ctx.restore();
@@ -713,17 +776,72 @@ const Game = () => {
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Cielo con degradado
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, '#87ceeb');
-    gradient.addColorStop(0.7, '#e0f6ff');
-    gradient.addColorStop(1, '#fff8dc');
-    ctx.fillStyle = gradient;
+    // Fondo según el tema
+    if (backgroundTheme === 'day') {
+      // Cielo diurno con degradado
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, '#87ceeb');
+      gradient.addColorStop(0.7, '#e0f6ff');
+      gradient.addColorStop(1, '#fff8dc');
+      ctx.fillStyle = gradient;
+    } else {
+      // Cielo nocturno con degradado
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, '#191970');
+      gradient.addColorStop(0.7, '#2c2c54');
+      gradient.addColorStop(1, '#1e1e2c');
+      ctx.fillStyle = gradient;
+      
+      // Estrellas en el fondo nocturno
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 50; i++) {
+        const x = (i * 37) % canvas.width;
+        const y = (i * 23) % (canvas.height - 100);
+        const size = Math.random() * 1.5 * scale;
+        ctx.globalAlpha = 0.7 + Math.random() * 0.3;
+        ctx.fillRect(x, y, size, size);
+      }
+      ctx.globalAlpha = 1;
+    }
+    
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Nubes animadas
+    // Sol/Luna según el tema
     const time = Date.now() * 0.001;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    if (backgroundTheme === 'day') {
+      // Sol
+      ctx.fillStyle = '#ffeb3b';
+      ctx.shadowColor = '#ff9800';
+      ctx.shadowBlur = 20 * scale;
+      ctx.beginPath();
+      ctx.arc(700 * scale, 80 * scale, 25 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    } else {
+      // Luna
+      ctx.fillStyle = '#f5f5f5';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 15 * scale;
+      ctx.beginPath();
+      ctx.arc(700 * scale, 80 * scale, 20 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      
+      // Cráteres en la luna
+      ctx.fillStyle = '#e0e0e0';
+      ctx.beginPath();
+      ctx.arc(690 * scale, 75 * scale, 4 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(710 * scale, 85 * scale, 3 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(695 * scale, 90 * scale, 2 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Nubes animadas (más oscuras en modo nocturno)
+    ctx.fillStyle = backgroundTheme === 'day' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(150, 150, 150, 0.6)';
     
     // Nube 1
     let cloudX1 = 100 * scale + Math.sin(time * 0.5) * 20 * scale;
@@ -741,7 +859,7 @@ const Game = () => {
     ctx.arc(cloudX2 + 40 * scale, 100 * scale, 20 * scale, 0, Math.PI * 2);
     ctx.fill();
     
-    // Edificios
+    // Edificios (más oscuros en modo nocturno)
     const buildings = [
       { x: 50 * scale, y: 100 * scale, w: 80 * scale, h: 265 * scale },
       { x: 200 * scale, y: 150 * scale, w: 100 * scale, h: 215 * scale },
@@ -750,17 +868,20 @@ const Game = () => {
     ];
     
     buildings.forEach(building => {
-      ctx.fillStyle = '#696969';
+      ctx.fillStyle = backgroundTheme === 'day' ? '#696969' : '#505050';
       ctx.fillRect(building.x, building.y, building.w, building.h);
       
-      ctx.fillStyle = '#505050';
+      ctx.fillStyle = backgroundTheme === 'day' ? '#505050' : '#404040';
       ctx.fillRect(building.x, building.y, building.w, 10 * scale);
       
-      // Ventanas
-      ctx.fillStyle = '#ffeb3b';
+      // Ventanas (menos encendidas en modo nocturno)
+      ctx.fillStyle = backgroundTheme === 'day' ? '#ffeb3b' : '#ffa500';
       for (let row = 0; row < Math.floor(building.h / (30 * scale)); row++) {
         for (let col = 0; col < Math.floor(building.w / (20 * scale)); col++) {
-          if (Math.random() > 0.3) {
+          const shouldLight = backgroundTheme === 'day' ? 
+            (Math.random() > 0.3) : 
+            (Math.random() > 0.7); // Menos ventanas encendidas de noche
+          if (shouldLight) {
             ctx.fillRect(
               building.x + 5 * scale + col * 20 * scale,
               building.y + 15 * scale + row * 30 * scale,
@@ -775,13 +896,13 @@ const Game = () => {
     // Suelo
     ctx.fillStyle = '#8b4513';
     ctx.fillRect(0, canvas.height - 50 * scale, canvas.width, 50 * scale);
-    ctx.fillStyle = '#90ee90';
+    ctx.fillStyle = backgroundTheme === 'day' ? '#90ee90' : '#2d5a2d';
     ctx.fillRect(0, canvas.height - 50 * scale, canvas.width, 10 * scale);
     
     // Dibujar power-ups
     powerUpsRef.current.forEach(powerUp => drawPowerUp(ctx, powerUp));
     
-    // Dibujar comida
+    // Dibujar comida (solo la que no ha sido recolectada)
     foodsRef.current.forEach(food => {
       const floatY = Math.sin(time * 3 + food.id * 0.01) * 2 * scale;
       drawFood(ctx, { ...food, y: food.y + floatY });
@@ -813,8 +934,12 @@ const Game = () => {
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`❤️ ${lives}`, canvas.width - 240 * scale, 35 * scale);
     
+    // Indicador de tema
+    ctx.fillStyle = backgroundTheme === 'day' ? '#ffeb3b' : '#4a90e2';
+    ctx.fillText(backgroundTheme === 'day' ? '☀️ Día' : '🌙 Noche', canvas.width - 240 * scale, 55 * scale);
+    
     // Mostrar power-ups activos
-    let powerUpY = 60 * scale;
+    let powerUpY = 80 * scale;
     activePowerUpsRef.current.forEach(powerUp => {
       ctx.fillStyle = 
         powerUp === 'shield' ? '#4a90e2' :
@@ -835,7 +960,7 @@ const Game = () => {
       ctx.textAlign = 'left';
     }
     
-  }, [score, lives, combo, showCombo, comboPosition, canvasSize, drawFood, drawObstacle, drawParticles, drawPowerUp, drawCat]);
+  }, [score, lives, combo, showCombo, comboPosition, canvasSize, backgroundTheme, drawFood, drawObstacle, drawParticles, drawPowerUp, drawCat]);
 
   const gameLoop = useCallback((timestamp) => {
     if (gameState !== 'playing') return;
@@ -910,20 +1035,26 @@ const Game = () => {
       });
     }
     
-    // Generar obstáculos
+    // Generar obstáculos que caen del cielo
     obstacleTimerRef.current += scaledDeltaTime;
-    if (obstacleTimerRef.current > 3000 / gameSpeedRef.current) {
+    if (obstacleTimerRef.current > 2500 / gameSpeedRef.current) {
       obstacleTimerRef.current = 0;
-      const obstacleTypes = ['dog', 'box'];
+      const obstacleTypes = ['dog', 'box', 'bird'];
       const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+      
+      const obstacleConfig = {
+        'dog': { width: 40, height: 25 },
+        'box': { width: 50, height: 30 },
+        'bird': { width: 35, height: 20 }
+      };
       
       obstaclesRef.current.push({
         id: Date.now() + Math.random(),
         type,
-        x: canvasSize.width,
-        y: type === 'dog' ? canvasSize.height - 90 * scale : canvasSize.height - 95 * scale,
-        width: (type === 'dog' ? 40 : 50) * scale,
-        height: (type === 'dog' ? 25 : 30) * scale,
+        x: Math.random() * (canvasSize.width - obstacleConfig[type].width * scale),
+        y: -50,
+        width: obstacleConfig[type].width * scale,
+        height: obstacleConfig[type].height * scale,
         speed: (3 + Math.random() * 2) * gameSpeedRef.current * scale * timeScale
       });
     }
@@ -935,15 +1066,15 @@ const Game = () => {
       createPowerUp();
     }
     
-    // Mover comida
+    // Mover comida (solo la que no ha sido recolectada)
     foodsRef.current = foodsRef.current
       .map(food => ({ ...food, y: food.y + food.speed * timeScale }))
       .filter(food => food.y < canvasSize.height);
     
-    // Mover obstáculos
+    // Mover obstáculos (ahora caen hacia abajo)
     obstaclesRef.current = obstaclesRef.current
-      .map(obstacle => ({ ...obstacle, x: obstacle.x - obstacle.speed * timeScale }))
-      .filter(obstacle => obstacle.x > -100);
+      .map(obstacle => ({ ...obstacle, y: obstacle.y + obstacle.speed * timeScale }))
+      .filter(obstacle => obstacle.y < canvasSize.height + 50);
     
     // Mover power-ups
     powerUpsRef.current = powerUpsRef.current
@@ -991,6 +1122,7 @@ const Game = () => {
     setLives(3);
     setCombo(1);
     setShowCombo(false);
+    setBackgroundTheme('day'); // Reset al tema diurno
     setGameState('playing');
   }, [canvasSize]);
 
@@ -1125,11 +1257,21 @@ const Game = () => {
               <div>
                 <div>←→ Movimiento | Toca arriba para saltar</div>
                 <div style={{ fontSize: '0.8em', opacity: 0.8, marginTop: '5px' }}>
-                  ¡Usa los botones o desliza!
+                  ¡Agarra la comida y evita los objetos que caen!
                 </div>
               </div>
             ) : (
-              <div>⬅️ ➡️ Mover | ⬆️ o Espacio Saltar</div>
+              <div>⬅️ ➡️ Mover | ⬆️ o Espacio Saltar | ¡Agarra la comida!</div>
+            )}
+            {score >= 150 && (
+              <div style={{ 
+                color: '#ffeb3b', 
+                fontWeight: 'bold', 
+                marginTop: '5px',
+                fontSize: Math.min(14, window.innerWidth / 35) + 'px'
+              }}>
+                ¡Modo Nocturno Desbloqueado! 🌙
+              </div>
             )}
           </div>
         </div>
@@ -1165,6 +1307,16 @@ const Game = () => {
           }}>
             Récord: {highScore}
           </p>
+          {score >= 150 && (
+            <p style={{ 
+              fontSize: Math.min(16, window.innerWidth / 30) + 'px', 
+              color: '#ff6b6b', 
+              fontWeight: 'bold',
+              margin: '10px 0' 
+            }}>
+              ¡Lograste el modo nocturno! 🌙
+            </p>
+          )}
           
           <button
             onClick={restartGame}
@@ -1215,7 +1367,7 @@ const Game = () => {
           </a>
         </p>
         <p style={{ margin: '5px 0', fontSize: '0.9em' }}>
-          ¡Disfruta del juego! 🎮
+          ¡Agarra la comida antes de que desaparezca! 🐟🥛
         </p>
       </footer>
     </div>
