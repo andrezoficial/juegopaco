@@ -1,0 +1,65 @@
+.game-over-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60vh;
+}
+
+.game-over-content {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 40px;
+  border-radius: 20px;
+  text-align: center;
+  box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+  backdrop-filter: blur(10px);
+  max-width: 400px;
+  width: 90%;
+}
+
+.game-over-content h2 {
+  color: #e74c3c;
+  font-size: 3rem;
+  margin-bottom: 20px;
+}
+
+.final-score {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 10px;
+}
+
+.high-score {
+  color: #f39c12;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.restart-button {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  font-size: 1.2rem;
+  border-radius: 25px;
+  cursor: pointer;
+  margin: 20px 0;
+  transition: all 0.3s ease;
+  box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+}
+
+.restart-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(52, 152, 219, 0.6);
+}
+
+.cat-animation {
+  margin-top: 20px;
+  font-size: 4rem;
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
