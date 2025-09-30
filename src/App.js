@@ -47,6 +47,7 @@ const Game = () => {
   const touchStartXRef = useRef(0);
   const isDraggingRef = useRef(false);
   const lastTouchXRef = useRef(0);
+  const lastTapTimeRef = useRef(0);
 
   // Detectar si es móvil
   const isMobile = typeof navigator !== 'undefined' ? 
@@ -60,10 +61,10 @@ const Game = () => {
     const containerWidth = container.clientWidth;
     const containerHeight = container.clientHeight;
     
-    // En móviles: usar casi toda la pantalla pero mantener relación de aspecto
     if (isMobile) {
+      // En móviles: usar relación de aspecto más apropiada
       const maxWidth = Math.min(800, containerWidth - 20);
-      const height = Math.min(400, containerHeight * 0.7); // 70% del alto disponible
+      const height = Math.min(500, containerHeight * 0.75); // Más alto para mejor visibilidad
       
       setCanvasSize({
         width: maxWidth,
@@ -74,7 +75,7 @@ const Game = () => {
       playerRef.current = {
         ...playerRef.current,
         x: 100 * scaleFactor,
-        y: height - 80,
+        y: height - 100, // Más espacio para edificios
         width: 50 * scaleFactor,
         height: 45 * (height / 400)
       };
@@ -193,7 +194,7 @@ const Game = () => {
     }, powerUp.duration);
   }, [playSound, createParticles]);
 
-  // Controles táctiles mejorados para móviles
+  // Controles táctiles mejorados para móviles - DOBLE TOUCH PARA SALTAR
   const handleTouchStart = useCallback((e) => {
     e.preventDefault();
     const touch = e.touches[0];
@@ -207,18 +208,26 @@ const Game = () => {
     lastTouchXRef.current = x;
     isDraggingRef.current = true;
     
-    // Salto al tocar en cualquier parte de la pantalla
-    if (!playerRef.current.isJumping) {
-      playerRef.current.velocityY = -12 * (canvasSize.height / 400);
-      playerRef.current.isJumping = true;
-      playSound('jump');
-      createParticles(
-        playerRef.current.x + playerRef.current.width/2, 
-        playerRef.current.y + playerRef.current.height, 
-        '#ffffff', 
-        3
-      );
+    // Sistema de doble touch para saltar
+    const currentTime = new Date().getTime();
+    const tapLength = currentTime - lastTapTimeRef.current;
+    
+    if (tapLength < 300 && tapLength > 0) {
+      // Doble touch detectado - saltar
+      if (!playerRef.current.isJumping) {
+        playerRef.current.velocityY = -12 * (canvasSize.height / 400);
+        playerRef.current.isJumping = true;
+        playSound('jump');
+        createParticles(
+          playerRef.current.x + playerRef.current.width/2, 
+          playerRef.current.y + playerRef.current.height, 
+          '#ffffff', 
+          3
+        );
+      }
     }
+    
+    lastTapTimeRef.current = currentTime;
   }, [canvasSize.height, playSound, createParticles]);
 
   const handleTouchMove = useCallback((e) => {
@@ -790,8 +799,18 @@ const Game = () => {
     ctx.arc(cloudX2 + 40 * scale, 100 * scale, 20 * scale, 0, Math.PI * 2);
     ctx.fill();
     
-    // Edificios (más oscuros en modo nocturno)
-    const buildings = [
+    // EDIFICIOS MEJOR UBICADOS - ESPECIALMENTE PARA MÓVILES
+    const buildings = isMobile ? [
+      // En móviles: edificios más bajos y mejor distribuidos
+      { x: 30 * scale, y: canvas.height - 250 * scale, w: 60 * scale, h: 200 * scale },
+      { x: 120 * scale, y: canvas.height - 280 * scale, w: 70 * scale, h: 230 * scale },
+      { x: 220 * scale, y: canvas.height - 240 * scale, w: 65 * scale, h: 190 * scale },
+      { x: 320 * scale, y: canvas.height - 270 * scale, w: 80 * scale, h: 220 * scale },
+      { x: 430 * scale, y: canvas.height - 260 * scale, w: 75 * scale, h: 210 * scale },
+      { x: 535 * scale, y: canvas.height - 290 * scale, w: 85 * scale, h: 240 * scale },
+      { x: 650 * scale, y: canvas.height - 230 * scale, w: 70 * scale, h: 180 * scale }
+    ] : [
+      // En desktop: edificios originales
       { x: 50 * scale, y: 100 * scale, w: 80 * scale, h: 265 * scale },
       { x: 200 * scale, y: 150 * scale, w: 100 * scale, h: 215 * scale },
       { x: 400 * scale, y: 120 * scale, w: 70 * scale, h: 245 * scale },
@@ -807,17 +826,20 @@ const Game = () => {
       
       // Ventanas (menos encendidas en modo nocturno)
       ctx.fillStyle = backgroundTheme === 'day' ? '#ffeb3b' : '#ffa500';
-      for (let row = 0; row < Math.floor(building.h / (30 * scale)); row++) {
-        for (let col = 0; col < Math.floor(building.w / (20 * scale)); col++) {
+      const windowRows = Math.floor(building.h / (30 * scale));
+      const windowCols = Math.floor(building.w / (20 * scale));
+      
+      for (let row = 0; row < windowRows; row++) {
+        for (let col = 0; col < windowCols; col++) {
           const shouldLight = backgroundTheme === 'day' ? 
             (Math.random() > 0.3) : 
-            (Math.random() > 0.7); // Menos ventanas encendidas de noche
+            (Math.random() > 0.7);
           if (shouldLight) {
             ctx.fillRect(
               building.x + 5 * scale + col * 20 * scale,
               building.y + 15 * scale + row * 30 * scale,
-              10 * scale,
-              15 * scale
+              8 * scale,
+              12 * scale
             );
           }
         }
@@ -891,7 +913,7 @@ const Game = () => {
       ctx.textAlign = 'left';
     }
     
-  }, [score, lives, combo, showCombo, comboPosition, canvasSize, backgroundTheme, drawFood, drawObstacle, drawParticles, drawPowerUp, drawCat]);
+  }, [score, lives, combo, showCombo, comboPosition, canvasSize, backgroundTheme, isMobile, drawFood, drawObstacle, drawParticles, drawPowerUp, drawCat]);
 
   const gameLoop = useCallback((timestamp) => {
     if (gameState !== 'playing') return;
@@ -1035,7 +1057,7 @@ const Game = () => {
     const scale = canvasSize.width / 800;
     playerRef.current = {
       x: 100 * scale,
-      y: isMobile ? canvasSize.height - 80 : (320 * canvasSize.height) / 400,
+      y: isMobile ? canvasSize.height - 100 : (320 * canvasSize.height) / 400,
       width: 50 * scale,
       height: 45 * (canvasSize.height / 400),
       velocityY: 0,
@@ -1213,9 +1235,9 @@ const Game = () => {
           }}>
             {isMobile ? (
               <div>
-                <div>✨ Toca para saltar | Desliza para mover ✨</div>
+                <div>✨ Doble toque para saltar | Desliza para mover ✨</div>
                 <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
-                  ¡Agarra la comida y evita los objetos que caen!
+                  ¡Toca dos veces rápidamente para saltar!
                 </div>
               </div>
             ) : (
@@ -1325,7 +1347,7 @@ const Game = () => {
           </a>
         </p>
         <p style={{ margin: '5px 0', fontSize: isMobile ? '11px' : '13px' }}>
-          {isMobile ? 'Toca para saltar • Desliza para mover' : '¡Agarra la comida antes de que desaparezca! 🐟🥛'}
+          {isMobile ? 'Doble toque para saltar • Desliza para mover' : '¡Agarra la comida antes de que desaparezca! 🐟🥛'}
         </p>
       </footer>
     </div>
