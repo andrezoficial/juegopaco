@@ -47,7 +47,9 @@ const Game = () => {
   const touchStartXRef = useRef(0);
   const isDraggingRef = useRef(false);
   const lastTouchXRef = useRef(0);
-  const lastTapTimeRef = useRef(0);
+  const lastTouchTimeRef = useRef(0);
+  const touchCountRef = useRef(0);
+  const lastTouchMoveTime = useRef(0);
 
   // Detectar si es móvil
   const isMobile = typeof navigator !== 'undefined' ? 
@@ -62,25 +64,24 @@ const Game = () => {
     const containerHeight = container.clientHeight;
     
     if (isMobile) {
-      // En móviles: usar relación de aspecto más apropiada
-      const maxWidth = Math.min(800, containerWidth - 20);
-      const height = Math.min(500, containerHeight * 0.75); // Más alto para mejor visibilidad
-      
+      const maxWidth = Math.min(600, containerWidth - 10);
+      const aspectRatio = 16 / 9;
+      const height = Math.min(maxWidth / aspectRatio, containerHeight * 0.8);
+
       setCanvasSize({
         width: maxWidth,
-        height: height
+        height: height,
       });
 
       const scaleFactor = maxWidth / 800;
       playerRef.current = {
         ...playerRef.current,
         x: 100 * scaleFactor,
-        y: height - 100, // Más espacio para edificios
+        y: height - 60,
         width: 50 * scaleFactor,
-        height: 45 * (height / 400)
+        height: 45 * (height / 400),
       };
     } else {
-      // En desktop: tamaño fijo pero responsivo
       const maxWidth = Math.min(800, containerWidth - 40);
       const height = Math.min(400, maxWidth * 0.5);
       
@@ -100,14 +101,12 @@ const Game = () => {
     }
   }, [isMobile]);
 
-  // 🔥 PRIMERO: Definir playSound antes que cualquier función que la use
   const playSound = useCallback((soundName) => {
     if (soundBuffersRef.current[soundName]) {
       soundBuffersRef.current[soundName]();
     }
   }, []);
 
-  // 🔥 SEGUNDO: Inicializar sistema de audio
   const initAudio = useCallback(async () => {
     try {
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -146,7 +145,6 @@ const Game = () => {
     }
   }, []);
 
-  // Sistema de partículas
   const createParticles = useCallback((x, y, color, count = 5) => {
     const scale = canvasSize.width / 800;
     for (let i = 0; i < count; i++) {
@@ -162,7 +160,6 @@ const Game = () => {
     }
   }, [canvasSize.width]);
 
-  // Power-ups
   const createPowerUp = useCallback(() => {
     const powerUpTypes = [
       { type: 'shield', color: '#4a90e2', duration: 5000 },
@@ -194,61 +191,66 @@ const Game = () => {
     }, powerUp.duration);
   }, [playSound, createParticles]);
 
-  // Controles táctiles mejorados para móviles - DOBLE TOUCH PARA SALTAR
+  const DOUBLE_TAP_THRESHOLD = 300;
+
   const handleTouchStart = useCallback((e) => {
     e.preventDefault();
+    if (e.touches.length > 1) return;
     const touch = e.touches[0];
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     const x = touch.clientX - rect.left;
-    
-    touchStartXRef.current = x;
-    lastTouchXRef.current = x;
-    isDraggingRef.current = true;
-    
-    // Sistema de doble touch para saltar
-    const currentTime = new Date().getTime();
-    const tapLength = currentTime - lastTapTimeRef.current;
-    
-    if (tapLength < 300 && tapLength > 0) {
-      // Doble touch detectado - saltar
-      if (!playerRef.current.isJumping) {
+
+    const currentTime = Date.now();
+    if (currentTime - lastTouchTimeRef.current < DOUBLE_TAP_THRESHOLD) {
+      touchCountRef.current += 1;
+      if (touchCountRef.current === 2 && !playerRef.current.isJumping) {
         playerRef.current.velocityY = -12 * (canvasSize.height / 400);
         playerRef.current.isJumping = true;
         playSound('jump');
         createParticles(
-          playerRef.current.x + playerRef.current.width/2, 
-          playerRef.current.y + playerRef.current.height, 
-          '#ffffff', 
-          3
+          playerRef.current.x + playerRef.current.width / 2,
+          playerRef.current.y + playerRef.current.height,
+          '#ffffff',
+          5
         );
+        touchCountRef.current = 0;
       }
+    } else {
+      touchCountRef.current = 1;
     }
-    
-    lastTapTimeRef.current = currentTime;
+    lastTouchTimeRef.current = currentTime;
+
+    touchStartXRef.current = x;
+    lastTouchXRef.current = x;
+    isDraggingRef.current = true;
   }, [canvasSize.height, playSound, createParticles]);
 
   const handleTouchMove = useCallback((e) => {
     e.preventDefault();
-    if (!isDraggingRef.current) return;
-    
+    const currentTime = Date.now();
+    if (currentTime - lastTouchMoveTime.current < 16) return;
+    lastTouchMoveTime.current = currentTime;
+
+    if (!isDraggingRef.current || e.touches.length > 1) return;
+
     const touch = e.touches[0];
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     const x = touch.clientX - rect.left;
-    
+
     const deltaX = x - lastTouchXRef.current;
     lastTouchXRef.current = x;
-    
-    if (Math.abs(deltaX) > 2) {
+
+    if (Math.abs(deltaX) > 1) {
       const player = playerRef.current;
       const scaleFactor = canvasSize.width / 800;
-      const moveSpeed = 8 * scaleFactor;
-      
+      const moveSpeed = 10 * scaleFactor;
+
       if (deltaX > 0 && player.x < canvasSize.width - player.width) {
         player.x += moveSpeed;
         player.isMoving = true;
@@ -265,12 +267,16 @@ const Game = () => {
     playerRef.current.isMoving = false;
   }, []);
 
-  // 🔥 AÑADIR: Función checkCollisions
+  const handleTouchCancel = useCallback((e) => {
+    e.preventDefault();
+    isDraggingRef.current = false;
+    playerRef.current.isMoving = false;
+  }, []);
+
   const checkCollisions = useCallback(() => {
     const player = playerRef.current;
     const currentTime = Date.now();
     
-    // Colisión con comida
     foodsRef.current.forEach((food, index) => {
       if (collectedFoodsRef.current.has(food.id)) return;
       
@@ -279,11 +285,9 @@ const Game = () => {
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance < 25) {
-        // Marcar como recolectada y eliminar del array
         collectedFoodsRef.current.add(food.id);
         foodsRef.current.splice(index, 1);
         
-        // Sistema de combo
         if (currentTime - lastComboTimeRef.current < 2000) {
           setCombo(prev => prev + 1);
         } else {
@@ -291,12 +295,10 @@ const Game = () => {
         }
         lastComboTimeRef.current = currentTime;
         
-        // Mostrar combo
         setShowCombo(true);
         setComboPosition({ x: food.x, y: food.y - 20 });
         setTimeout(() => setShowCombo(false), 1000);
         
-        // Puntos con multiplicador
         const basePoints = 10;
         const multiplier = activePowerUpsRef.current.has('doublePoints') ? 2 : 1;
         const comboMultiplier = Math.min(combo, 5);
@@ -304,14 +306,12 @@ const Game = () => {
         
         setScore(prev => {
           const newScore = prev + totalPoints;
-          // Cambiar a tema nocturno al alcanzar 150 puntos
           if (newScore >= 150 && backgroundTheme === 'day') {
             setBackgroundTheme('night');
           }
           return newScore;
         });
         
-        // Sonido y partículas
         if (combo > 2) {
           playSound('collectCombo');
           createParticles(food.x, food.y, '#ffeb3b', 10);
@@ -322,7 +322,6 @@ const Game = () => {
       }
     });
     
-    // Colisión con power-ups
     powerUpsRef.current.forEach((powerUp, index) => {
       const dx = player.x + player.width/2 - powerUp.x;
       const dy = player.y + player.height/2 - powerUp.y;
@@ -334,7 +333,6 @@ const Game = () => {
       }
     });
     
-    // Colisión con obstáculos (omitir si tiene escudo)
     if (!activePowerUpsRef.current.has('shield')) {
       obstaclesRef.current.forEach((obstacle, index) => {
         if (hitObstaclesRef.current.has(obstacle.id)) return;
@@ -349,7 +347,7 @@ const Game = () => {
           playSound('hit');
           createParticles(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2, '#ff4444', 8);
           
-          setCombo(1); // Reset combo
+          setCombo(1);
           
           setLives(prev => {
             const newLives = prev - 1;
@@ -365,7 +363,6 @@ const Game = () => {
     }
   }, [score, combo, playSound, createParticles, applyPowerUp, backgroundTheme]);
 
-  // Funciones de dibujo (drawFood, drawObstacle, etc.)
   const drawFood = useCallback((ctx, food) => {
     ctx.save();
     
@@ -428,10 +425,9 @@ const Game = () => {
     const scale = canvasSize.width / 800;
     
     if (obstacle.type === 'dog') {
-      // Perro cayendo del cielo (rotado)
       ctx.save();
       ctx.translate(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2);
-      ctx.rotate(Math.PI); // Rotar 180 grados para que caiga boca abajo
+      ctx.rotate(Math.PI);
       
       ctx.fillStyle = '#8b4513';
       ctx.fillRect(-obstacle.width/2, -obstacle.height/2, obstacle.width, obstacle.height);
@@ -459,10 +455,9 @@ const Game = () => {
       
       ctx.restore();
     } else if (obstacle.type === 'box') {
-      // Caja cayendo del cielo (con efecto de rotación)
       ctx.save();
       ctx.translate(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2);
-      const rotation = (Date.now() * 0.01) % (Math.PI * 2); // Rotación continua
+      const rotation = (Date.now() * 0.01) % (Math.PI * 2);
       ctx.rotate(rotation);
       
       ctx.fillStyle = '#d2691e';
@@ -482,17 +477,14 @@ const Game = () => {
       
       ctx.restore();
     } else if (obstacle.type === 'bird') {
-      // Nuevo obstáculo: pájaro
       ctx.save();
       ctx.translate(obstacle.x, obstacle.y);
       
-      // Cuerpo del pájaro
       ctx.fillStyle = '#ff6b6b';
       ctx.beginPath();
       ctx.arc(0, 0, 12 * scale, 0, Math.PI * 2);
       ctx.fill();
       
-      // Alas (animadas)
       const wingFlap = Math.sin(Date.now() * 0.01) * 5 * scale;
       ctx.fillStyle = '#ff8e8e';
       ctx.beginPath();
@@ -503,7 +495,6 @@ const Game = () => {
       ctx.ellipse(8 * scale, wingFlap, 8 * scale, 5 * scale, -Math.PI/4, 0, Math.PI * 2);
       ctx.fill();
       
-      // Pico
       ctx.fillStyle = '#ffeb3b';
       ctx.beginPath();
       ctx.moveTo(12 * scale, 0);
@@ -512,7 +503,6 @@ const Game = () => {
       ctx.closePath();
       ctx.fill();
       
-      // Ojo
       ctx.fillStyle = '#000000';
       ctx.beginPath();
       ctx.arc(-5 * scale, -5 * scale, 2 * scale, 0, Math.PI * 2);
@@ -570,7 +560,6 @@ const Game = () => {
     ctx.restore();
   }, [canvasSize.width]);
 
-  // Dibujar gato
   const drawCat = useCallback((ctx, x, y, width, height) => {
     ctx.save();
     
@@ -587,17 +576,14 @@ const Game = () => {
       ctx.shadowBlur = 0;
     }
     
-    // Cuerpo principal - gris
     ctx.fillStyle = '#7a7a7a';
     ctx.fillRect(x, y + 10 * scale, width, height - 10 * scale);
     
-    // Cabeza
     ctx.fillStyle = '#7a7a7a';
     ctx.beginPath();
     ctx.arc(x + width/2, y + 12 * scale, 16 * scale, 0, Math.PI * 2);
     ctx.fill();
     
-    // Orejas
     ctx.fillStyle = '#6a6a6a';
     ctx.beginPath();
     ctx.moveTo(x + 10 * scale, y + 5 * scale);
@@ -611,7 +597,6 @@ const Game = () => {
     ctx.lineTo(x + width - 15 * scale, y + 8 * scale);
     ctx.fill();
     
-    // Interior orejas rosa
     ctx.fillStyle = '#ffb3ba';
     ctx.beginPath();
     ctx.moveTo(x + 10 * scale, y + 5 * scale);
@@ -625,18 +610,15 @@ const Game = () => {
     ctx.lineTo(x + width - 13 * scale, y + 7 * scale);
     ctx.fill();
     
-    // Pecho blanco
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(x + width/2, y + 25 * scale, 12 * scale, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillRect(x + width/2 - 8 * scale, y + 25 * scale, 16 * scale, 20 * scale);
     
-    // Cara blanca
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(x + width/2 - 10 * scale, y + 15 * scale, 20 * scale, 12 * scale);
     
-    // Nariz rosa
     ctx.fillStyle = '#ffb3ba';
     ctx.beginPath();
     ctx.moveTo(x + width/2, y + 20 * scale);
@@ -644,7 +626,6 @@ const Game = () => {
     ctx.lineTo(x + width/2 + 3 * scale, y + 17 * scale);
     ctx.fill();
     
-    // Ojos (cerrados si está en slow motion)
     if (activePowerUpsRef.current.has('slowMotion')) {
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 2 * scale;
@@ -657,7 +638,6 @@ const Game = () => {
       ctx.lineTo(x + width/2 + 9 * scale, y + 12 * scale);
       ctx.stroke();
     } else {
-      // Ojos verdes normales
       ctx.fillStyle = '#90ee90';
       ctx.beginPath();
       ctx.arc(x + width/2 - 7 * scale, y + 12 * scale, 3 * scale, 0, Math.PI * 2);
@@ -666,7 +646,6 @@ const Game = () => {
       ctx.arc(x + width/2 + 7 * scale, y + 12 * scale, 3 * scale, 0, Math.PI * 2);
       ctx.fill();
       
-      // Pupilas
       ctx.fillStyle = '#000000';
       ctx.beginPath();
       ctx.arc(x + width/2 - 7 * scale, y + 12 * scale, 1.5 * scale, 0, Math.PI * 2);
@@ -676,7 +655,6 @@ const Game = () => {
       ctx.fill();
     }
     
-    // Bigotes
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1 * scale;
     ctx.beginPath();
@@ -690,12 +668,10 @@ const Game = () => {
     ctx.lineTo(x + width - 3 * scale, y + 20 * scale);
     ctx.stroke();
     
-    // Patas
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(x + 8 * scale, y + height - 5 * scale, 10 * scale, 5 * scale);
     ctx.fillRect(x + width - 18 * scale, y + height - 5 * scale, 10 * scale, 5 * scale);
     
-    // Cola
     ctx.strokeStyle = '#7a7a7a';
     ctx.lineWidth = 5 * scale;
     ctx.beginPath();
@@ -716,29 +692,25 @@ const Game = () => {
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Fondo según el tema
     if (backgroundTheme === 'day') {
-      // Cielo diurno con degradado
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, '#87ceeb');
+      gradient.addColorStop(0, isMobile ? '#5ba8d0' : '#87ceeb');
       gradient.addColorStop(0.7, '#e0f6ff');
       gradient.addColorStop(1, '#fff8dc');
       ctx.fillStyle = gradient;
     } else {
-      // Cielo nocturno con degradado
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
       gradient.addColorStop(0, '#191970');
       gradient.addColorStop(0.7, '#2c2c54');
       gradient.addColorStop(1, '#1e1e2c');
       ctx.fillStyle = gradient;
       
-      // Estrellas en el fondo nocturno
       ctx.fillStyle = '#ffffff';
       for (let i = 0; i < 50; i++) {
         const x = (i * 37) % canvas.width;
         const y = (i * 23) % (canvas.height - 100);
-        const size = Math.random() * 1.5 * scale;
-        ctx.globalAlpha = 0.7 + Math.random() * 0.3;
+        const size = Math.random() * (isMobile ? 2 : 1.5) * scale;
+        ctx.globalAlpha = isMobile ? 0.9 : 0.7 + Math.random() * 0.3;
         ctx.fillRect(x, y, size, size);
       }
       ctx.globalAlpha = 1;
@@ -746,10 +718,8 @@ const Game = () => {
     
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Sol/Luna según el tema
     const time = Date.now() * 0.001;
     if (backgroundTheme === 'day') {
-      // Sol
       ctx.fillStyle = '#ffeb3b';
       ctx.shadowColor = '#ff9800';
       ctx.shadowBlur = 20 * scale;
@@ -758,7 +728,6 @@ const Game = () => {
       ctx.fill();
       ctx.shadowBlur = 0;
     } else {
-      // Luna
       ctx.fillStyle = '#f5f5f5';
       ctx.shadowColor = '#ffffff';
       ctx.shadowBlur = 15 * scale;
@@ -767,7 +736,6 @@ const Game = () => {
       ctx.fill();
       ctx.shadowBlur = 0;
       
-      // Cráteres en la luna
       ctx.fillStyle = '#e0e0e0';
       ctx.beginPath();
       ctx.arc(690 * scale, 75 * scale, 4 * scale, 0, Math.PI * 2);
@@ -780,10 +748,8 @@ const Game = () => {
       ctx.fill();
     }
     
-    // Nubes animadas (más oscuras en modo nocturno)
     ctx.fillStyle = backgroundTheme === 'day' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(150, 150, 150, 0.6)';
     
-    // Nube 1
     let cloudX1 = 100 * scale + Math.sin(time * 0.5) * 20 * scale;
     ctx.beginPath();
     ctx.arc(cloudX1, 80 * scale, 25 * scale, 0, Math.PI * 2);
@@ -791,7 +757,6 @@ const Game = () => {
     ctx.arc(cloudX1 + 50 * scale, 80 * scale, 25 * scale, 0, Math.PI * 2);
     ctx.fill();
     
-    // Nube 2
     let cloudX2 = 500 * scale + Math.cos(time * 0.3) * 15 * scale;
     ctx.beginPath();
     ctx.arc(cloudX2, 100 * scale, 20 * scale, 0, Math.PI * 2);
@@ -799,18 +764,7 @@ const Game = () => {
     ctx.arc(cloudX2 + 40 * scale, 100 * scale, 20 * scale, 0, Math.PI * 2);
     ctx.fill();
     
-    // EDIFICIOS MEJOR UBICADOS - ESPECIALMENTE PARA MÓVILES
-    const buildings = isMobile ? [
-      // En móviles: edificios más bajos y mejor distribuidos
-      { x: 30 * scale, y: canvas.height - 250 * scale, w: 60 * scale, h: 200 * scale },
-      { x: 120 * scale, y: canvas.height - 280 * scale, w: 70 * scale, h: 230 * scale },
-      { x: 220 * scale, y: canvas.height - 240 * scale, w: 65 * scale, h: 190 * scale },
-      { x: 320 * scale, y: canvas.height - 270 * scale, w: 80 * scale, h: 220 * scale },
-      { x: 430 * scale, y: canvas.height - 260 * scale, w: 75 * scale, h: 210 * scale },
-      { x: 535 * scale, y: canvas.height - 290 * scale, w: 85 * scale, h: 240 * scale },
-      { x: 650 * scale, y: canvas.height - 230 * scale, w: 70 * scale, h: 180 * scale }
-    ] : [
-      // En desktop: edificios originales
+    const buildings = [
       { x: 50 * scale, y: 100 * scale, w: 80 * scale, h: 265 * scale },
       { x: 200 * scale, y: 150 * scale, w: 100 * scale, h: 215 * scale },
       { x: 400 * scale, y: 120 * scale, w: 70 * scale, h: 245 * scale },
@@ -824,13 +778,9 @@ const Game = () => {
       ctx.fillStyle = backgroundTheme === 'day' ? '#505050' : '#404040';
       ctx.fillRect(building.x, building.y, building.w, 10 * scale);
       
-      // Ventanas (menos encendidas en modo nocturno)
       ctx.fillStyle = backgroundTheme === 'day' ? '#ffeb3b' : '#ffa500';
-      const windowRows = Math.floor(building.h / (30 * scale));
-      const windowCols = Math.floor(building.w / (20 * scale));
-      
-      for (let row = 0; row < windowRows; row++) {
-        for (let col = 0; col < windowCols; col++) {
+      for (let row = 0; row < Math.floor(building.h / (30 * scale)); row++) {
+        for (let col = 0; col < Math.floor(building.w / (20 * scale)); col++) {
           const shouldLight = backgroundTheme === 'day' ? 
             (Math.random() > 0.3) : 
             (Math.random() > 0.7);
@@ -838,39 +788,32 @@ const Game = () => {
             ctx.fillRect(
               building.x + 5 * scale + col * 20 * scale,
               building.y + 15 * scale + row * 30 * scale,
-              8 * scale,
-              12 * scale
+              10 * scale,
+              15 * scale
             );
           }
         }
       }
     });
     
-    // Suelo
     ctx.fillStyle = '#8b4513';
     ctx.fillRect(0, canvas.height - 50 * scale, canvas.width, 50 * scale);
     ctx.fillStyle = backgroundTheme === 'day' ? '#90ee90' : '#2d5a2d';
     ctx.fillRect(0, canvas.height - 50 * scale, canvas.width, 10 * scale);
     
-    // Dibujar power-ups
     powerUpsRef.current.forEach(powerUp => drawPowerUp(ctx, powerUp));
     
-    // Dibujar comida (solo la que no ha sido recolectada)
     foodsRef.current.forEach(food => {
       const floatY = Math.sin(time * 3 + food.id * 0.01) * 2 * scale;
       drawFood(ctx, { ...food, y: food.y + floatY });
     });
     
-    // Dibujar obstáculos
     obstaclesRef.current.forEach(obstacle => drawObstacle(ctx, obstacle));
     
-    // Dibujar partículas
     drawParticles(ctx);
     
-    // Dibujar jugador
     drawCat(ctx, player.x, player.y, player.width, player.height);
     
-    // UI mejorada
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(10 * scale, 10 * scale, 250 * scale, 50 * scale);
     ctx.fillRect(canvas.width - 260 * scale, 10 * scale, 250 * scale, 50 * scale);
@@ -887,11 +830,9 @@ const Game = () => {
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`❤️ ${lives}`, canvas.width - 240 * scale, 35 * scale);
     
-    // Indicador de tema
     ctx.fillStyle = backgroundTheme === 'day' ? '#ffeb3b' : '#4a90e2';
     ctx.fillText(backgroundTheme === 'day' ? '☀️ Día' : '🌙 Noche', canvas.width - 240 * scale, 55 * scale);
     
-    // Mostrar power-ups activos
     let powerUpY = 80 * scale;
     activePowerUpsRef.current.forEach(powerUp => {
       ctx.fillStyle = 
@@ -904,7 +845,6 @@ const Game = () => {
       powerUpY += 25 * scale;
     });
     
-    // Efecto de combo
     if (showCombo) {
       ctx.fillStyle = '#ffeb3b';
       ctx.font = `bold ${30 * scale}px Arial`;
@@ -913,7 +853,7 @@ const Game = () => {
       ctx.textAlign = 'left';
     }
     
-  }, [score, lives, combo, showCombo, comboPosition, canvasSize, backgroundTheme, isMobile, drawFood, drawObstacle, drawParticles, drawPowerUp, drawCat]);
+  }, [score, lives, combo, showCombo, comboPosition, canvasSize, backgroundTheme, drawFood, drawObstacle, drawParticles, drawPowerUp, drawCat, isMobile]);
 
   const gameLoop = useCallback((timestamp) => {
     if (gameState !== 'playing') return;
@@ -927,7 +867,6 @@ const Game = () => {
     const timeScale = activePowerUpsRef.current.has('slowMotion') ? 0.5 : 1;
     const scaledDeltaTime = deltaTime * timeScale;
     
-    // Movimiento con teclado (para desktop)
     if (!isMobile) {
       player.isMoving = false;
       if (keysRef.current['ArrowLeft'] && player.x > 0) {
@@ -939,7 +878,6 @@ const Game = () => {
         player.isMoving = true;
       }
       
-      // Salto con teclado
       if ((keysRef.current['ArrowUp'] || keysRef.current[' ']) && !player.isJumping) {
         player.velocityY = -12 * scale;
         player.isJumping = true;
@@ -953,7 +891,6 @@ const Game = () => {
       }
     }
     
-    // Gravedad
     if (player.isJumping) {
       player.velocityY += 0.6 * scale * timeScale;
       player.y += player.velocityY * timeScale;
@@ -974,7 +911,6 @@ const Game = () => {
       }
     }
     
-    // Generar comida
     foodTimerRef.current += scaledDeltaTime;
     if (foodTimerRef.current > 2000 / gameSpeedRef.current) {
       foodTimerRef.current = 0;
@@ -990,7 +926,6 @@ const Game = () => {
       });
     }
     
-    // Generar obstáculos que caen del cielo
     obstacleTimerRef.current += scaledDeltaTime;
     if (obstacleTimerRef.current > 2500 / gameSpeedRef.current) {
       obstacleTimerRef.current = 0;
@@ -1014,34 +949,28 @@ const Game = () => {
       });
     }
     
-    // Generar power-ups (raro)
     powerUpTimerRef.current += scaledDeltaTime;
     if (powerUpTimerRef.current > 10000 / gameSpeedRef.current && Math.random() < 0.3) {
       powerUpTimerRef.current = 0;
       createPowerUp();
     }
     
-    // Mover comida (solo la que no ha sido recolectada)
     foodsRef.current = foodsRef.current
       .map(food => ({ ...food, y: food.y + food.speed * timeScale }))
       .filter(food => food.y < canvasSize.height);
     
-    // Mover obstáculos (ahora caen hacia abajo)
     obstaclesRef.current = obstaclesRef.current
       .map(obstacle => ({ ...obstacle, y: obstacle.y + obstacle.speed * timeScale }))
       .filter(obstacle => obstacle.y < canvasSize.height + 50);
     
-    // Mover power-ups
     powerUpsRef.current = powerUpsRef.current
       .map(powerUp => ({ ...powerUp, y: powerUp.y + powerUp.speed * timeScale }))
       .filter(powerUp => powerUp.y < canvasSize.height);
     
-    // Aumentar dificultad
     if (timestamp % 10000 < 16) {
       gameSpeedRef.current = Math.min(gameSpeedRef.current + 0.05, 3);
     }
     
-    // Reset combo si pasa mucho tiempo
     if (timestamp - lastComboTimeRef.current > 2000) {
       setCombo(1);
     }
@@ -1052,12 +981,11 @@ const Game = () => {
     animationFrameRef.current = requestAnimationFrame(gameLoop);
   }, [gameState, draw, checkCollisions, playSound, createParticles, createPowerUp, canvasSize, isMobile]);
 
-  // 🔥 AÑADIR: Función restartGame que faltaba
   const restartGame = useCallback(() => {
     const scale = canvasSize.width / 800;
     playerRef.current = {
       x: 100 * scale,
-      y: isMobile ? canvasSize.height - 100 : (320 * canvasSize.height) / 400,
+      y: isMobile ? canvasSize.height - 80 : (320 * canvasSize.height) / 400,
       width: 50 * scale,
       height: 45 * (canvasSize.height / 400),
       velocityY: 0,
@@ -1073,20 +1001,21 @@ const Game = () => {
     collectedFoodsRef.current.clear();
     hitObstaclesRef.current.clear();
     activePowerUpsRef.current.clear();
+    lastTouchTimeRef.current = 0;
+    touchCountRef.current = 0;
+    lastTouchMoveTime.current = 0;
     setScore(0);
     setLives(3);
     setCombo(1);
     setShowCombo(false);
-    setBackgroundTheme('day'); // Reset al tema diurno
+    setBackgroundTheme('day');
     setGameState('playing');
   }, [canvasSize, isMobile]);
 
-  // Efectos iniciales
   useEffect(() => {
     initAudio();
   }, [initAudio]);
 
-  // Ajustar tamaño inicial y en redimensionamiento
   useEffect(() => {
     updateCanvasSize();
     
@@ -1098,12 +1027,10 @@ const Game = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [updateCanvasSize]);
 
-  // Controles para desktop
   useEffect(() => {
     if (isMobile) return;
     
     const handleKeyDown = (e) => {
-      // Prevenir scroll con teclas de flecha y espacio
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
         e.preventDefault();
       }
@@ -1123,7 +1050,6 @@ const Game = () => {
     };
   }, [isMobile]);
 
-  // Controles táctiles para móviles
   useEffect(() => {
     if (!isMobile) return;
     
@@ -1132,7 +1058,6 @@ const Game = () => {
     
     const preventDefault = (e) => e.preventDefault();
     
-    // Prevenir gestos de zoom y scroll
     document.addEventListener('touchmove', preventDefault, { passive: false });
     document.addEventListener('gesturestart', preventDefault);
     document.addEventListener('gesturechange', preventDefault);
@@ -1141,6 +1066,7 @@ const Game = () => {
     canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', handleTouchCancel, { passive: false });
     
     return () => {
       document.removeEventListener('touchmove', preventDefault);
@@ -1151,10 +1077,10 @@ const Game = () => {
       canvas.removeEventListener('touchstart', handleTouchStart);
       canvas.removeEventListener('touchmove', handleTouchMove);
       canvas.removeEventListener('touchend', handleTouchEnd);
+      canvas.removeEventListener('touchcancel', handleTouchCancel);
     };
-  }, [isMobile, handleTouchStart, handleTouchMove, handleTouchEnd]);
+  }, [isMobile, handleTouchStart, handleTouchMove, handleTouchEnd, handleTouchCancel]);
 
-  // Game loop
   useEffect(() => {
     if (gameState === 'playing') {
       animationFrameRef.current = requestAnimationFrame(gameLoop);
@@ -1177,34 +1103,37 @@ const Game = () => {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: isMobile ? '10px' : '20px',
+        padding: isMobile ? '5px' : '20px',
         fontFamily: 'Arial, sans-serif',
         overflow: 'hidden',
         position: 'relative',
         width: '100vw',
-        height: '100vh'
+        height: '100vh',
       }}
     >
-      {/* Título responsive */}
-      <h1 style={{
-        color: 'white',
-        fontSize: isMobile ? '24px' : '36px',
-        textShadow: '3px 3px 6px rgba(0,0,0,0.3)',
-        margin: isMobile ? '5px 0 15px 0' : '0 0 20px 0',
-        textAlign: 'center',
-        padding: '0 10px',
-        zIndex: 10
-      }}>
+      <h1
+        style={{
+          color: 'white',
+          fontSize: isMobile ? '20px' : '36px',
+          textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+          margin: isMobile ? '5px 0 10px 0' : '0 0 20px 0',
+          textAlign: 'center',
+          padding: '0 10px',
+          zIndex: 10,
+        }}
+      >
         🐱 PACO EN LA CIUDAD 🎮
       </h1>
       
       {gameState === 'playing' ? (
-        <div style={{ 
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center'
-        }}>
+        <div
+          style={{
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
           <canvas
             ref={canvasRef}
             width={canvasSize.width}
@@ -1216,84 +1145,103 @@ const Game = () => {
               boxShadow: '0 8px 25px rgba(0,0,0,0.3)',
               maxWidth: '100%',
               height: 'auto',
-              touchAction: 'none'
+              touchAction: 'none',
             }}
           />
           
-          {/* Instrucciones responsive */}
-          <div style={{
-            marginTop: '15px',
-            color: 'white',
-            fontSize: isMobile ? '14px' : '16px',
-            textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
-            background: 'rgba(255,255,255,0.2)',
-            padding: '10px 20px',
-            borderRadius: '20px',
-            backdropFilter: 'blur(10px)',
-            textAlign: 'center',
-            maxWidth: '90vw'
-          }}>
+          <div
+            style={{
+              marginTop: isMobile ? '10px' : '15px',
+              color: 'white',
+              fontSize: isMobile ? '12px' : '16px',
+              textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+              background: 'rgba(255,255,255,0.2)',
+              padding: isMobile ? '8px 15px' : '10px 20px',
+              borderRadius: '20px',
+              backdropFilter: 'blur(10px)',
+              textAlign: 'center',
+              maxWidth: '90vw',
+            }}
+          >
             {isMobile ? (
               <div>
                 <div>✨ Doble toque para saltar | Desliza para mover ✨</div>
-                <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '5px' }}>
-                  ¡Toca dos veces rápidamente para saltar!
+                <div
+                  style={{
+                    fontSize: isMobile ? '10px' : '12px',
+                    opacity: 0.8,
+                    marginTop: '5px',
+                  }}
+                >
+                  ¡Agarra la comida y evita los objetos que caen! ¡Optimizado para toques multi-gesto!
                 </div>
               </div>
             ) : (
               <div>⬅️ ➡️ Mover | ⬆️ o Espacio Saltar | ¡Agarra la comida!</div>
             )}
             {score >= 150 && (
-              <div style={{ 
-                color: '#ffeb3b', 
-                fontWeight: 'bold', 
-                marginTop: '5px',
-                fontSize: isMobile ? '12px' : '14px'
-              }}>
+              <div
+                style={{
+                  color: '#ffeb3b',
+                  fontWeight: 'bold',
+                  marginTop: '5px',
+                  fontSize: isMobile ? '10px' : '14px',
+                }}
+              >
                 ¡Modo Nocturno Desbloqueado! 🌙
               </div>
             )}
           </div>
         </div>
       ) : (
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.95)',
-          padding: isMobile ? '25px' : '40px',
-          borderRadius: '15px',
-          textAlign: 'center',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-          maxWidth: '90vw',
-          width: isMobile ? '300px' : '400px'
-        }}>
-          <h2 style={{ 
-            fontSize: isMobile ? '24px' : '32px', 
-            color: '#333', 
-            margin: '0 0 15px 0' 
-          }}>
+        <div
+          style={{
+            background: 'rgba(255, 255, 255, 0.95)',
+            padding: isMobile ? '20px' : '40px',
+            borderRadius: '15px',
+            textAlign: 'center',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+            maxWidth: '90vw',
+            width: isMobile ? '280px' : '400px',
+          }}
+        >
+          <h2
+            style={{
+              fontSize: isMobile ? '20px' : '32px',
+              color: '#333',
+              margin: '0 0 15px 0',
+            }}
+          >
             😿 Game Over
           </h2>
-          <p style={{ 
-            fontSize: isMobile ? '18px' : '24px', 
-            color: '#667eea', 
-            fontWeight: 'bold', 
-            margin: '10px 0' 
-          }}>
+          <p
+            style={{
+              fontSize: isMobile ? '16px' : '24px',
+              color: '#667eea',
+              fontWeight: 'bold',
+              margin: '10px 0',
+            }}
+          >
             Puntos: {score}
           </p>
-          <p style={{ 
-            fontSize: isMobile ? '16px' : '18px', 
-            color: '#888', 
-            margin: '5px 0' 
-          }}>
+          <p
+            style={{
+              fontSize: isMobile ? '14px' : '18px',
+              color: '#888',
+              margin: '5px 0',
+            }}
+          >
             Récord: {highScore}
           </p>
           {score >= 150 && (
-            <p style={{ 
-              fontSize: isMobile ? '14px' : '16px', 
-              color: '#ff6b6b', 
-              fontWeight: 'bold',
-              margin: '10px 0' 
-            }}>
+            <p
+              style={{
+                fontSize: isMobile ? '12px' : '16px',
+                color: '#ff6b6b',
+                fontWeight: 'bold',
+                margin: '10px 0',
+              }}
+            >
               ¡Lograste el modo nocturno! 🌙
             </p>
           )}
@@ -1302,8 +1250,8 @@ const Game = () => {
             onClick={restartGame}
             style={{
               marginTop: '20px',
-              padding: '12px 30px',
-              fontSize: isMobile ? '16px' : '18px',
+              padding: isMobile ? '10px 25px' : '12px 30px',
+              fontSize: isMobile ? '14px' : '18px',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               color: 'white',
               border: 'none',
@@ -1313,7 +1261,7 @@ const Game = () => {
               boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
               transition: 'all 0.3s ease',
               width: '100%',
-              maxWidth: '250px'
+              maxWidth: isMobile ? '200px' : '250px',
             }}
           >
             🎮 Jugar de Nuevo
@@ -1321,16 +1269,17 @@ const Game = () => {
         </div>
       )}
       
-      {/* Pie de página con créditos */}
-      <footer style={{
-        marginTop: '20px',
-        color: 'white',
-        textAlign: 'center',
-        fontSize: isMobile ? '12px' : '14px',
-        opacity: 0.8,
-        padding: '10px',
-        width: '100%'
-      }}>
+      <footer
+        style={{
+          marginTop: isMobile ? '10px' : '20px',
+          color: 'white',
+          textAlign: 'center',
+          fontSize: isMobile ? '10px' : '14px',
+          opacity: 0.8,
+          padding: '10px',
+          width: '100%',
+        }}
+      >
         <p style={{ margin: '5px 0' }}>
           Desarrollado por{' '}
           <a 
@@ -1346,8 +1295,10 @@ const Game = () => {
             AndrezOficial
           </a>
         </p>
-        <p style={{ margin: '5px 0', fontSize: isMobile ? '11px' : '13px' }}>
-          {isMobile ? 'Doble toque para saltar • Desliza para mover' : '¡Agarra la comida antes de que desaparezca! 🐟🥛'}
+        <p style={{ margin: '5px 0', fontSize: isMobile ? '9px' : '13px' }}>
+          {isMobile 
+            ? 'Doble toque para saltar • Desliza para mover' 
+            : '¡Agarra la comida antes de que desaparezca! 🐟🥛'}
         </p>
       </footer>
     </div>
