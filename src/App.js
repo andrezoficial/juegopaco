@@ -15,6 +15,11 @@ const Game = () => {
     height: 400 
   });
   const [backgroundTheme, setBackgroundTheme] = useState('day');
+  // Estado para controlar si la imagen de Paco está cargada
+  const [pacoImageLoaded, setPacoImageLoaded] = useState(false);
+  
+  // Referencia para la imagen de Paco
+  const pacoImageRef = useRef(null);
   
   const playerRef = useRef({
     x: 100,
@@ -50,6 +55,20 @@ const Game = () => {
   const lastTouchTimeRef = useRef(0);
   const touchCountRef = useRef(0);
   const lastTouchMoveTime = useRef(0);
+
+  // Cargar la imagen de Paco
+  useEffect(() => {
+    const pacoImage = new Image();
+    pacoImage.onload = () => {
+      setPacoImageLoaded(true);
+    };
+    pacoImage.onerror = () => {
+      console.log('Error cargando la imagen paco.png');
+      setPacoImageLoaded(false);
+    };
+    pacoImage.src = '/paco.png'; // Ajusta la ruta según donde esté tu imagen
+    pacoImageRef.current = pacoImage;
+  }, []);
 
   // Detectar si es móvil
   const isMobile = typeof navigator !== 'undefined' ? 
@@ -1111,19 +1130,55 @@ const Game = () => {
         height: '100vh',
       }}
     >
-      <h1
+      <div
         style={{
-          color: 'white',
-          fontSize: isMobile ? '20px' : '36px',
-          textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: isMobile ? '10px' : '20px',
           margin: isMobile ? '5px 0 10px 0' : '0 0 20px 0',
-          textAlign: 'center',
-          padding: '0 10px',
           zIndex: 10,
         }}
       >
-        🐱 PACO EN LA CIUDAD 🎮
-      </h1>
+        {/* Imagen de Paco */}
+        {pacoImageLoaded && (
+          <img 
+            src="/paco.png" 
+            alt="Paco"
+            style={{
+              width: isMobile ? '40px' : '60px',
+              height: isMobile ? '40px' : '60px',
+              objectFit: 'contain',
+            }}
+          />
+        )}
+        
+        <h1
+          style={{
+            color: 'white',
+            fontSize: isMobile ? '20px' : '36px',
+            textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+            textAlign: 'center',
+            padding: '0 10px',
+            margin: 0,
+          }}
+        >
+          {pacoImageLoaded ? 'PACO EN LA CIUDAD' : '🐱 PACO EN LA CIUDAD'} 🎮
+        </h1>
+
+        {/* Imagen de Paco duplicada para simetría */}
+        {pacoImageLoaded && (
+          <img 
+            src="/paco.png" 
+            alt="Paco"
+            style={{
+              width: isMobile ? '40px' : '60px',
+              height: isMobile ? '40px' : '60px',
+              objectFit: 'contain',
+            }}
+          />
+        )}
+      </div>
       
       {gameState === 'playing' ? (
         <div
