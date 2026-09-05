@@ -10,6 +10,12 @@ const EAR_PINK = '#f2b9c6';
 const NOSE_COLOR = '#ef93a7';
 const EYE_COLOR = '#c3d98a';
 const OUTLINE = '#5f6b78';
+// Tonos "lejanos": para la pata, oreja y ojo del lado opuesto del cuerpo,
+// más apagados que sus versiones cercanas para leerse como si estuvieran
+// un paso más atrás (profundidad), en vez de simplemente faltar.
+const FUR_FAR = '#7c8996';
+const PAW_FAR = '#d9dee2';
+const EYE_FAR = '#93a06a';
 
 // El dibujo se define en un sistema de coordenadas propio ("unidades de
 // diseño") centrado en el personaje, pensado para que se vea bien a 188
@@ -96,6 +102,11 @@ function paintCat(ctx, time, isMoving, isJumping, activePowerUps) {
   const tailPhase = time * (isMoving ? 3.5 : 1.6);
   const frontLegX = isMoving ? 8 * Math.sin(runPhase) : 0;
   const backLegX = isMoving ? 8 * Math.sin(runPhase + Math.PI) : 0;
+  // Las patas del lado lejano se mueven en contrafase respecto a su pareja
+  // cercana (igual que un cuadrúpedo real, que apoya en diagonal), y con
+  // menos amplitud porque quedan más ocultas tras el cuerpo.
+  const farFrontLegX = isMoving ? 5 * Math.sin(runPhase + Math.PI) : 0;
+  const farBackLegX = isMoving ? 5 * Math.sin(runPhase) : 0;
   const tailCurl = 10 * Math.sin(tailPhase);
 
   // Cola: dos trazos (base gruesa + puntita más clara) con un curvado que
@@ -114,8 +125,18 @@ function paintCat(ctx, time, isMoving, isJumping, activePowerUps) {
   ctx.quadraticCurveTo(-94, -64 + tailCurl, -81, -66 + tailCurl);
   ctx.stroke();
 
-  // Pata trasera (detrás del cuerpo)
+  // Pata trasera lejana: asoma un poco detrás/al lado de la cercana, en un
+  // tono apagado, para que se lea como las cuatro patas del gato y no como
+  // si le faltaran dos.
+  ctx.fillStyle = FUR_FAR;
+  ellipse(ctx, -34 + farBackLegX, 50, 9, 17);
+  ctx.fillStyle = PAW_FAR;
+  ellipse(ctx, -34 + farBackLegX, 64, 10, 7);
+
+  // Pata trasera cercana (detrás del cuerpo). Se extiende un poco hacia
+  // arriba para fundirse con el cuerpo en vez de dejar un hueco.
   ctx.fillStyle = FUR_DARK;
+  ellipse(ctx, -22 + backLegX, 40, 13, 22);
   ellipse(ctx, -22 + backLegX, 56, 10, 19);
   ctx.fillStyle = FUR_LIGHT;
   ellipse(ctx, -22 + backLegX, 71, 11, 8);
@@ -125,25 +146,48 @@ function paintCat(ctx, time, isMoving, isJumping, activePowerUps) {
   ctx.fillStyle = FUR_DARK;
   ellipse(ctx, 28, -8, 30, 30);
 
+  // Pata delantera lejana: asoma junto al pecho, del lado opuesto, en el
+  // mismo tono apagado que la trasera lejana.
+  ctx.fillStyle = FUR_FAR;
+  ellipse(ctx, 40 + farFrontLegX, 50, 9, 17);
+  ctx.fillStyle = PAW_FAR;
+  ellipse(ctx, 40 + farFrontLegX, 64, 10, 7);
+
   // Cuerpo y panza clara
   ellipse(ctx, -14, 8, 60, 40);
   ctx.fillStyle = FUR_LIGHT;
   ellipse(ctx, -12, 24, 40, 22);
 
-  // Pata delantera (por encima del cuerpo, un tono más claro para dar
-  // sensación de profundidad)
+  // Pata delantera cercana (por encima del cuerpo, un tono más claro para
+  // dar sensación de profundidad). También se extiende hacia arriba para
+  // conectarse bien con el cuerpo.
   ctx.fillStyle = FUR_MID;
+  ellipse(ctx, 28 + frontLegX, 40, 13, 22);
   ellipse(ctx, 28 + frontLegX, 56, 10, 19);
   ctx.fillStyle = FUR_LIGHT;
   ellipse(ctx, 28 + frontLegX, 71, 11, 8);
 
-  // Oreja trasera, asomando detrás de la cabeza
+  // Oreja trasera, asomando detrás de la cabeza (agrandada y movida un poco
+  // más arriba/afuera para que se note como una segunda oreja y no quede
+  // escondida casi por completo bajo la cabeza)
   ctx.fillStyle = FUR_MID;
-  triangle(ctx, 30, -56, 18, -84, 42, -68);
+  triangle(ctx, 26, -58, 8, -92, 44, -72);
 
   // Cabeza
   ctx.fillStyle = FUR_DARK;
   ellipse(ctx, 44, -36, 44, 38);
+
+  // Ojo lejano: una pista pequeña y apagada del segundo ojo, asomando por
+  // encima del puente de la nariz, entre las dos orejas, para que el gato
+  // no se lea como si tuviera un solo ojo.
+  ctx.save();
+  ctx.translate(30, -58);
+  ctx.rotate((-8 * Math.PI) / 180);
+  ctx.fillStyle = EYE_FAR;
+  ellipse(ctx, 0, 0, 5, 6.5);
+  ctx.restore();
+  ctx.fillStyle = '#3a3a3a';
+  ellipse(ctx, 31, -57, 2.2, 3.8);
 
   // Oreja delantera, con interior rosado
   ctx.fillStyle = FUR_DARK;
