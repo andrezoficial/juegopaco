@@ -121,3 +121,52 @@ export const POWERUP_TYPES = [
   { type: 'doublePoints', color: '#ffeb3b', duration: 8000 },
   { type: 'slowMotion', color: '#90ee90', duration: 6000 },
 ];
+
+// --- Clima dinámico ---
+// El clima cambia cada cierto intervalo (con algo de variación) y afecta
+// tanto el gameplay (viento empuja a Paco, lluvia reduce visibilidad de lo
+// que acaba de aparecer arriba) como el sonido y el fondo.
+export const WEATHER = {
+  checkIntervalMs: 20000,
+  // Probabilidades relativas de cada estado al hacer un chequeo.
+  weights: { clear: 0.5, wind: 0.27, rain: 0.23 },
+  wind: {
+    gustIntervalRangeMs: [900, 2200],
+    forceRange: [0.5, 1.5], // px base por frame (se escala con `scale`)
+    decay: 0.985,
+  },
+  rain: {
+    dropCount: 60,
+    // Qué tan marcada es la "niebla" que oculta obstáculos recién aparecidos.
+    fogStrength: 0.5,
+    // Velocidad de suavizado del fog al entrar/salir de la lluvia (0-1 por frame).
+    fogSmoothing: 0.02,
+  },
+};
+
+// Duración de la transición animada entre día y noche (en vez de un salto
+// instantáneo de color al cambiar de tema).
+export const THEME_TRANSITION_MS = 3000;
+
+// --- Música de fondo (sintetizada, sin archivos externos) ---
+// Patrón de bajo en semitonos relativos, tocado en loop. El tempo y el tono
+// suben con `intensity` (0-1), que useGameEngine deriva de la velocidad
+// actual del juego, para reforzar la sensación de que "va más rápido".
+export const MUSIC = {
+  pattern: [0, 3, 5, 3, 7, 5, 3, 0],
+  baseFreq: 110,
+  bpmRange: [88, 158],
+  noteGain: 0.1,
+};
+
+// Elige un tipo de clima al azar respetando los pesos relativos de WEATHER.weights.
+export function pickWeatherType() {
+  const entries = Object.entries(WEATHER.weights);
+  const total = entries.reduce((sum, [, w]) => sum + w, 0);
+  let r = Math.random() * total;
+  for (const [type, w] of entries) {
+    if (r < w) return type;
+    r -= w;
+  }
+  return entries[0][0];
+}

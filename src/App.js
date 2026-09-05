@@ -19,6 +19,8 @@ const App = () => {
     level,
     levelName,
     gameState,
+    muted,
+    toggleMute,
     startGame,
     restartGame,
     togglePause,
@@ -59,6 +61,8 @@ const App = () => {
           level={level}
           levelName={levelName}
           gameState={gameState}
+          muted={muted}
+          onToggleMute={toggleMute}
           onTogglePause={togglePause}
           onRestart={restartGame}
         />

@@ -1,7 +1,7 @@
 import React from 'react';
 import { PauseScreen } from './PauseScreen';
 
-export function GameCanvas({ canvasRef, canvasSize, isMobile, score, level, levelName, gameState, onTogglePause, onRestart }) {
+export function GameCanvas({ canvasRef, canvasSize, isMobile, score, level, levelName, gameState, muted, onToggleMute, onTogglePause, onRestart }) {
   const isPaused = gameState === 'paused';
 
   return (
@@ -70,6 +70,22 @@ export function GameCanvas({ canvasRef, canvasSize, isMobile, score, level, leve
             {isPaused ? '▶️' : '⏸'}
           </button>
         )}
+        <button
+          onClick={onToggleMute}
+          title={muted ? 'Activar sonido' : 'Silenciar'}
+          style={{
+            background: 'rgba(255,255,255,0.25)',
+            border: '1px solid rgba(255,255,255,0.5)',
+            borderRadius: '8px',
+            color: 'white',
+            cursor: 'pointer',
+            padding: '4px 10px',
+            fontSize: isMobile ? '12px' : '14px',
+            fontWeight: 'bold',
+          }}
+        >
+          {muted ? '🔇' : '🔊'}
+        </button>
         <span style={{ color: '#a0e8ff', fontWeight: 'bold', fontSize: isMobile ? '10px' : '14px' }}>
           ⭐ Nivel {level} · {levelName}
         </span>

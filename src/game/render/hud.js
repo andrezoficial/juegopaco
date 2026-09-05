@@ -20,8 +20,13 @@ function drawPanel(ctx, x, y, width, height, scale) {
   ctx.stroke();
 }
 
+const WEATHER_LABELS = {
+  wind: '🌬️ Viento',
+  rain: '🌧️ Lluvia',
+};
+
 export function drawHUD(ctx, canvas, scale, hudState) {
-  const { score, lives, combo, showCombo, comboPosition, backgroundTheme, activePowerUps, comboBroken, level } = hudState;
+  const { score, lives, combo, showCombo, comboPosition, backgroundTheme, activePowerUps, comboBroken, level, weather } = hudState;
 
   ctx.textBaseline = 'alphabetic';
 
@@ -59,8 +64,33 @@ export function drawHUD(ctx, canvas, scale, hudState) {
   ctx.fillText(backgroundTheme === 'day' ? '☀️ Día' : '🌙 Noche', canvas.width - 24 * scale, 56 * scale);
   ctx.textAlign = 'left';
 
-  // --- Pills de power-ups activos, debajo del panel derecho ---
+  // --- Pill de clima activo (viento/lluvia), debajo del panel derecho ---
   let powerUpY = 12 * scale + leftH + 10 * scale;
+
+  if (weather && weather !== 'clear' && WEATHER_LABELS[weather]) {
+    const label = WEATHER_LABELS[weather];
+    ctx.font = `600 ${13 * scale}px ${FONT_FAMILY}`;
+    const textWidth = ctx.measureText(label).width;
+    const pillW = textWidth + 24 * scale;
+    const pillH = 26 * scale;
+    const pillX = canvas.width - pillW - 12 * scale;
+
+    roundRect(ctx, pillX, powerUpY, pillW, pillH, pillH / 2);
+    ctx.fillStyle = 'rgba(20, 15, 40, 0.75)';
+    ctx.fill();
+    ctx.lineWidth = 1.5 * scale;
+    ctx.strokeStyle = weather === 'rain' ? '#8ec9ff' : '#dff5ff';
+    ctx.stroke();
+
+    ctx.fillStyle = weather === 'rain' ? '#8ec9ff' : '#dff5ff';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, pillX + pillW / 2, powerUpY + pillH / 2 + 5 * scale);
+    ctx.textAlign = 'left';
+
+    powerUpY += pillH + 6 * scale;
+  }
+
+  // --- Pills de power-ups activos ---
   activePowerUps.forEach((powerUp) => {
     const info = POWERUP_HUD[powerUp];
     if (!info) return;

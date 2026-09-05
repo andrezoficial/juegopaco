@@ -5,18 +5,20 @@ import { drawPowerUp } from './powerups';
 import { drawParticles } from './particles';
 import { drawCat } from './player';
 import { drawHUD, drawPauseOverlay, drawLevelUpBanner } from './hud';
+import { drawRain, drawWindEffect } from './weather';
 
 export { drawBackground, drawFood, drawObstacle, drawPowerUp, drawParticles, drawCat, drawHUD, drawPauseOverlay, drawLevelUpBanner };
 
 /**
  * Dibuja un frame completo del juego: fondo -> power-ups -> comida -> obstáculos
- * -> partículas -> jugador -> HUD -> overlay de pausa (si aplica).
+ * -> partículas -> jugador -> clima -> HUD -> overlay de pausa (si aplica).
  * Devuelve el array de partículas vivas para que el caller actualice el ref.
  */
-export function drawFrame(ctx, canvas, { scale, isMobile, backgroundTheme, player, pacoImage, foods, obstacles, powerUps, particles, activePowerUps, hud, isPaused }) {
+export function drawFrame(ctx, canvas, { scale, isMobile, backgroundTheme, themeTransition, weather, player, pacoImage, foods, obstacles, powerUps, particles, activePowerUps, hud, isPaused }) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  drawBackground(ctx, canvas, scale, backgroundTheme, isMobile);
+  const windForBackground = weather?.wind?.strength > 0.05 ? weather.wind : null;
+  drawBackground(ctx, canvas, scale, backgroundTheme, isMobile, themeTransition, { wind: windForBackground });
 
   powerUps.forEach((powerUp) => drawPowerUp(ctx, powerUp, scale));
 
@@ -36,6 +38,13 @@ export function drawFrame(ctx, canvas, { scale, isMobile, backgroundTheme, playe
     facing: player.facing || 1,
     groundY: canvas.height - 45 * scale,
   });
+
+  // Clima: la lluvia se dibuja encima de las entidades (reduce visibilidad
+  // real, no solo decorativa) y el viento se ve como rachas sutiles.
+  if (weather) {
+    drawRain(ctx, canvas, scale, weather.rain?.intensity || 0);
+    drawWindEffect(ctx, canvas, scale, weather.wind?.dir || 1, weather.wind?.strength || 0);
+  }
 
   drawHUD(ctx, canvas, scale, hud);
 

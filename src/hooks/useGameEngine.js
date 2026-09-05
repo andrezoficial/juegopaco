@@ -9,7 +9,10 @@ import {
   LEVEL_BONUS_LIFE_EVERY,
   MAX_LIVES,
   STORAGE_KEYS,
+  WEATHER,
+  THEME_TRANSITION_MS,
   getLevelForScore,
+  pickWeatherType,
 } from '../game/constants';
 import { spawnFood, spawnObstacle, spawnPowerUp, spawnParticles } from '../game/entities';
 import { checkCollisions } from '../game/collisions';
@@ -41,6 +44,7 @@ export function useGameEngine() {
   const [backgroundTheme, setBackgroundTheme] = useState('day');
   // Feedback visual cuando se rompe el combo
   const [comboBroken, setComboBroken] = useState(false);
+  const [muted, setMutedState] = useState(false);
 
   // --- Sistema de niveles ---
   const [level, setLevel] = useState(1);
@@ -49,9 +53,23 @@ export function useGameEngine() {
   const levelInfoRef = useRef(LEVELS[0]);
   const levelNumberRef = useRef(1);
   const levelUpTimeoutRef = useRef(null);
+  // Referencia al tema "actual" independiente del ciclo de render, para poder
+  // saber de dónde viene la transición cuando cambia (día -> noche o viceversa).
+  const currentThemeRef = useRef('day');
 
   const { pacoImageLoaded, pacoImageRef } = usePacoImage();
-  const { playSound } = useAudio();
+  const {
+    playSound,
+    resumeAudio,
+    startMusic,
+    stopMusic,
+    setMusicIntensity,
+    setAmbientTheme,
+    startRain,
+    stopRain,
+    playWindGust,
+    setMuted,
+  } = useAudio();
 
   const playerRef = useRef({ ...PLAYER_BASE, velocityY: 0, isJumping: false, velocityX: 0, isMoving: false, facing: 1 });
   const { containerRef, canvasSize, isMobile } = useCanvasSize(playerRef);
@@ -75,6 +93,20 @@ export function useGameEngine() {
   const scoreRef = useRef(0);
   const prevKeyStateRef = useRef({});
 
+  // --- Clima dinámico ---
+  const weatherRef = useRef('clear');
+  const weatherCheckTimerRef = useRef(0);
+  const windDirRef = useRef(1);
+  const windStrengthRef = useRef(0);
+  const windGustTimerRef = useRef(0);
+  const windNextGustDelayRef = useRef(1200);
+  // Intensidad de lluvia suavizada (0-1) para que la niebla/gotas aparezcan
+  // y se disipen de forma gradual en vez de encender/apagar de golpe.
+  const rainIntensityRef = useRef(0);
+
+  // --- Transición animada de tema (amanecer/atardecer) ---
+  const themeTransitionRef = useRef({ fromTheme: 'day', startTime: 0 });
+
   // Revisa si el puntaje actual cruzó el umbral del siguiente nivel y, de ser
   // así, aplica el salto de dificultad, el cambio de ambiente, el sonido/toast
   // y una posible vida extra.
@@ -87,6 +119,12 @@ export function useGameEngine() {
       levelInfoRef.current = levelData;
       setLevel(levelData.level);
       setLevelName(levelData.name);
+
+      if (levelData.theme !== currentThemeRef.current) {
+        themeTransitionRef.current = { fromTheme: currentThemeRef.current, startTime: performance.now() };
+        currentThemeRef.current = levelData.theme;
+        setAmbientTheme(levelData.theme);
+      }
       setBackgroundTheme(levelData.theme);
 
       setHighestLevel((prev) => {
@@ -108,7 +146,7 @@ export function useGameEngine() {
         });
       }
     },
-    [playSound]
+    [playSound, setAmbientTheme]
   );
 
   const spawnParticlesInto = useCallback(
@@ -206,6 +244,8 @@ export function useGameEngine() {
           const newLives = prev - 1;
           if (newLives <= 0) {
             playSound('gameOver');
+            stopMusic();
+            stopRain();
             setGameState('gameOver');
             // Leer el score más reciente desde el ref, no desde el closure
             setHighScore((current) => {
@@ -218,7 +258,7 @@ export function useGameEngine() {
         });
       });
     },
-    [playSound, spawnParticlesInto, applyPowerUp, checkLevelProgress]
+    [playSound, spawnParticlesInto, applyPowerUp, checkLevelProgress, stopMusic, stopRain]
   );
 
   const draw = useCallback(() => {
@@ -227,10 +267,18 @@ export function useGameEngine() {
     const ctx = canvas.getContext('2d');
     const scale = canvasSize.width / 800;
 
+    const transition = themeTransitionRef.current;
+    const themeProgress = Math.min(1, (performance.now() - transition.startTime) / THEME_TRANSITION_MS);
+
     particlesRef.current = drawFrame(ctx, canvas, {
       scale,
       isMobile,
       backgroundTheme,
+      themeTransition: { fromTheme: transition.fromTheme, progress: themeProgress },
+      weather: {
+        rain: { intensity: rainIntensityRef.current },
+        wind: { dir: windDirRef.current, strength: windStrengthRef.current },
+      },
       player: playerRef.current,
       pacoImage: pacoImageRef.current,
       foods: foodsRef.current,
@@ -250,6 +298,7 @@ export function useGameEngine() {
         level,
         levelName,
         showLevelUp,
+        weather: weatherRef.current,
       },
     });
   }, [canvasSize.width, isMobile, backgroundTheme, score, lives, combo, showCombo, comboPosition, comboBroken, level, levelName, showLevelUp]);
@@ -272,6 +321,7 @@ export function useGameEngine() {
       const wasPausePressed = prevKeyStateRef.current['Escape'] || prevKeyStateRef.current['p'] || prevKeyStateRef.current['P'];
       if (pausePressed && !wasPausePressed) {
         prevKeyStateRef.current = { ...keys };
+        stopMusic();
         setGameState('paused');
         return;
       }
@@ -312,6 +362,44 @@ export function useGameEngine() {
         }
       }
 
+      // --- Clima dinámico: cambia cada cierto intervalo (viento empuja a
+      // Paco lateralmente, la lluvia reduce visibilidad de lo que acaba de
+      // aparecer arriba). ---
+      weatherCheckTimerRef.current += scaledDeltaTime;
+      if (weatherCheckTimerRef.current > WEATHER.checkIntervalMs) {
+        weatherCheckTimerRef.current = 0;
+        const newWeather = pickWeatherType();
+        if (newWeather !== weatherRef.current) {
+          weatherRef.current = newWeather;
+          if (newWeather === 'rain') {
+            startRain();
+          } else {
+            stopRain();
+          }
+        }
+      }
+
+      if (weatherRef.current === 'wind') {
+        windGustTimerRef.current += scaledDeltaTime;
+        if (windGustTimerRef.current > windNextGustDelayRef.current) {
+          windGustTimerRef.current = 0;
+          windDirRef.current = Math.random() < 0.5 ? -1 : 1;
+          const [minForce, maxForce] = WEATHER.wind.forceRange;
+          windStrengthRef.current = minForce + Math.random() * (maxForce - minForce);
+          const [minGust, maxGust] = WEATHER.wind.gustIntervalRangeMs;
+          windNextGustDelayRef.current = minGust + Math.random() * (maxGust - minGust);
+          playWindGust();
+        }
+        player.x += windDirRef.current * windStrengthRef.current * scale * timeScale;
+        player.x = Math.max(0, Math.min(canvasSize.width - player.width, player.x));
+        windStrengthRef.current *= WEATHER.wind.decay;
+      } else {
+        windStrengthRef.current *= 0.9;
+      }
+
+      const rainTarget = weatherRef.current === 'rain' ? 1 : 0;
+      rainIntensityRef.current += (rainTarget - rainIntensityRef.current) * WEATHER.rain.fogSmoothing;
+
       const levelSpeedMult = levelInfoRef.current.speedMultiplier;
       const levelSpawnMult = levelInfoRef.current.spawnMultiplier;
       const effectiveGameSpeed = gameSpeedRef.current * levelSpeedMult;
@@ -348,6 +436,10 @@ export function useGameEngine() {
 
       if (timestamp % DIFFICULTY.increaseEveryMs < 16) {
         gameSpeedRef.current = Math.min(gameSpeedRef.current + DIFFICULTY.speedIncrement, DIFFICULTY.maxGameSpeed);
+        // La música sube de tempo/tono junto con la dificultad real (velocidad
+        // base * multiplicador de nivel), para reforzar la sensación de "más rápido".
+        const combinedSpeed = gameSpeedRef.current * levelInfoRef.current.speedMultiplier;
+        setMusicIntensity(Math.min(1, (combinedSpeed - 1) / 4));
       }
 
       if (timestamp - lastComboTimeRef.current > COMBO.windowMs) {
@@ -369,7 +461,22 @@ export function useGameEngine() {
 
       animationFrameRef.current = requestAnimationFrame(gameLoop);
     },
-    [gameState, draw, applyCollisionEvents, playSound, spawnParticlesInto, createPowerUp, canvasSize, isMobile, keysRef]
+    [
+      gameState,
+      draw,
+      applyCollisionEvents,
+      playSound,
+      spawnParticlesInto,
+      createPowerUp,
+      canvasSize,
+      isMobile,
+      keysRef,
+      stopMusic,
+      startRain,
+      stopRain,
+      playWindGust,
+      setMusicIntensity,
+    ]
   );
 
   const resetGameState = useCallback(() => {
@@ -398,7 +505,19 @@ export function useGameEngine() {
     setCombo(1);
     setShowCombo(false);
     setComboBroken(false);
+
+    currentThemeRef.current = 'day';
     setBackgroundTheme('day');
+    themeTransitionRef.current = { fromTheme: 'day', startTime: performance.now() - THEME_TRANSITION_MS };
+
+    weatherRef.current = 'clear';
+    weatherCheckTimerRef.current = 0;
+    windDirRef.current = 1;
+    windStrengthRef.current = 0;
+    windGustTimerRef.current = 0;
+    windNextGustDelayRef.current = 1200;
+    rainIntensityRef.current = 0;
+    stopRain();
 
     levelNumberRef.current = 1;
     levelInfoRef.current = LEVELS[0];
@@ -406,25 +525,53 @@ export function useGameEngine() {
     setLevelName(LEVELS[0].name);
     setShowLevelUp(false);
     clearTimeout(levelUpTimeoutRef.current);
-  }, [canvasSize, isMobile]);
+  }, [canvasSize, isMobile, stopRain]);
 
   const startGame = useCallback(() => {
     resetGameState();
+    resumeAudio();
+    setAmbientTheme('day');
+    setMusicIntensity(0);
+    startMusic();
     setGameState('playing');
-  }, [resetGameState]);
+  }, [resetGameState, resumeAudio, setAmbientTheme, setMusicIntensity, startMusic]);
 
   const restartGame = useCallback(() => {
     resetGameState();
+    resumeAudio();
+    setAmbientTheme('day');
+    setMusicIntensity(0);
+    startMusic();
     setGameState('playing');
-  }, [resetGameState]);
+  }, [resetGameState, resumeAudio, setAmbientTheme, setMusicIntensity, startMusic]);
 
   const togglePause = useCallback(() => {
     setGameState((prev) => {
-      if (prev === 'playing') return 'paused';
-      if (prev === 'paused') return 'playing';
+      if (prev === 'playing') {
+        stopMusic();
+        return 'paused';
+      }
+      if (prev === 'paused') {
+        startMusic();
+        return 'playing';
+      }
       return prev;
     });
-  }, []);
+  }, [stopMusic, startMusic]);
+
+  const toggleMute = useCallback(() => {
+    setMutedState((prev) => {
+      const next = !prev;
+      setMuted(next);
+      if (!next && gameState === 'playing') {
+        // Al des-silenciar en pleno juego, retomamos música y ambiente.
+        startMusic();
+        setAmbientTheme(currentThemeRef.current);
+        if (weatherRef.current === 'rain') startRain();
+      }
+      return next;
+    });
+  }, [setMuted, gameState, startMusic, setAmbientTheme, startRain]);
 
   useEffect(() => {
     if (gameState === 'playing') {
@@ -452,6 +599,8 @@ export function useGameEngine() {
     levelName,
     gameState,
     backgroundTheme,
+    muted,
+    toggleMute,
     startGame,
     restartGame,
     togglePause,
