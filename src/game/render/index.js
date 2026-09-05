@@ -30,7 +30,12 @@ export function drawFrame(ctx, canvas, { scale, isMobile, backgroundTheme, playe
 
   const aliveParticles = drawParticles(ctx, particles);
 
-  drawCat(ctx, player.x, player.y, player.width, player.height, scale, activePowerUps, pacoImage, player.velocityY);
+  drawCat(ctx, player.x, player.y, player.width, player.height, scale, activePowerUps, pacoImage, player.velocityY, {
+    isMoving: player.isMoving,
+    isJumping: player.isJumping,
+    facing: player.facing || 1,
+    groundY: canvas.height - 45 * scale,
+  });
 
   drawHUD(ctx, canvas, scale, hud);
 

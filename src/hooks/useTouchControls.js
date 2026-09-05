@@ -77,9 +77,11 @@ export function useTouchControls({ canvasRef, playerRef, canvasSize, isMobile, p
         if (deltaX > 0 && player.x < canvasSize.width - player.width) {
           player.x += moveSpeed;
           player.isMoving = true;
+          player.facing = 1;
         } else if (deltaX < 0 && player.x > 0) {
           player.x -= moveSpeed;
           player.isMoving = true;
+          player.facing = -1;
         }
       }
     },

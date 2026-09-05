@@ -53,7 +53,7 @@ export function useGameEngine() {
   const { pacoImageLoaded, pacoImageRef } = usePacoImage();
   const { playSound } = useAudio();
 
-  const playerRef = useRef({ ...PLAYER_BASE, velocityY: 0, isJumping: false, velocityX: 0, isMoving: false });
+  const playerRef = useRef({ ...PLAYER_BASE, velocityY: 0, isJumping: false, velocityX: 0, isMoving: false, facing: 1 });
   const { containerRef, canvasSize, isMobile } = useCanvasSize(playerRef);
   const keysRef = useKeyboardControls(isMobile);
 
@@ -282,10 +282,12 @@ export function useGameEngine() {
         if (keys['ArrowLeft'] && player.x > 0) {
           player.x -= PHYSICS.moveSpeed * scale * timeScale;
           player.isMoving = true;
+          player.facing = -1;
         }
         if (keys['ArrowRight'] && player.x < canvasSize.width - player.width) {
           player.x += PHYSICS.moveSpeed * scale * timeScale;
           player.isMoving = true;
+          player.facing = 1;
         }
         if ((keys['ArrowUp'] || keys[' ']) && !player.isJumping) {
           player.velocityY = PHYSICS.jumpVelocity * scale;
