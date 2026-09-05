@@ -1,4 +1,5 @@
 import { FONT_FAMILY } from '../constants';
+import { roundRect } from './canvasUtils';
 
 const PANEL_BG = 'rgba(30, 20, 60, 0.72)';
 const PANEL_BORDER = 'rgba(255, 255, 255, 0.18)';
@@ -9,18 +10,6 @@ const POWERUP_HUD = {
   slowMotion: { color: '#90ee90', label: '🐌 Cámara Lenta' },
 };
 
-// Dibuja un rectángulo con esquinas redondeadas. Se implementa a mano (en vez
-// de ctx.roundRect) para no depender de soporte de navegador reciente.
-function roundRect(ctx, x, y, width, height, radius) {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
-}
 
 function drawPanel(ctx, x, y, width, height, scale) {
   roundRect(ctx, x, y, width, height, 14 * scale);
