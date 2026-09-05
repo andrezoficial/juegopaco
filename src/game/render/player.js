@@ -177,17 +177,17 @@ function paintCat(ctx, time, isMoving, isJumping, activePowerUps) {
   ctx.fillStyle = FUR_DARK;
   ellipse(ctx, 44, -36, 44, 38);
 
-  // Ojo lejano: una pista pequeña y apagada del segundo ojo, asomando por
-  // encima del puente de la nariz, entre las dos orejas, para que el gato
-  // no se lea como si tuviera un solo ojo.
+  // Ojo lejano: una pista pequeña y apagada del segundo ojo, asomando justo
+  // detrás/arriba del ojo principal (junto al puente de la nariz), para que
+  // se lea como el otro ojo de la cara y no como algo cerca de la nuca.
   ctx.save();
-  ctx.translate(30, -58);
+  ctx.translate(40, -47);
   ctx.rotate((-8 * Math.PI) / 180);
   ctx.fillStyle = EYE_FAR;
-  ellipse(ctx, 0, 0, 5, 6.5);
+  ellipse(ctx, 0, 0, 6, 7.5);
   ctx.restore();
   ctx.fillStyle = '#3a3a3a';
-  ellipse(ctx, 31, -57, 2.2, 3.8);
+  ellipse(ctx, 41, -45, 2.6, 4.4);
 
   // Oreja delantera, con interior rosado
   ctx.fillStyle = FUR_DARK;
