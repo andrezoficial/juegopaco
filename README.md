@@ -1,70 +1,79 @@
-# Getting Started with Create React App
+# 🐱 Paco en la Ciudad
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Juego arcade 2D hecho con React y Canvas: esquiva obstáculos, recolecta comida y encadena combos.
 
-## Available Scripts
+## Cómo correrlo
 
-In the project directory, you can run:
+```bash
+npm install
+npm start        # http://localhost:3000
+npm test         # corre las pruebas
+npm run build    # build de producción
+```
 
-### `npm start`
+## Arquitectura
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+El código está organizado por responsabilidad. `App.js` ya no contiene lógica de
+juego: solo compone componentes y usa el hook `useGameEngine`.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+```
+src/
+├── App.js                     # Composición de alto nivel (sin lógica de juego)
+│
+├── game/                      # Lógica de juego pura (sin React, fácil de testear)
+│   ├── constants.js           # Configuración: física, spawn rates, dificultad
+│   ├── entities.js            # Fábricas: spawnFood, spawnObstacle, spawnPowerUp...
+│   ├── collisions.js          # Detección de colisiones (devuelve eventos)
+│   └── render/                # Funciones de dibujo en canvas
+│       ├── background.js      # Cielo, sol/luna, edificios, suelo
+│       ├── player.js          # Dibuja a Paco
+│       ├── food.js            # Dibuja pescado, leche, croquetas
+│       ├── obstacles.js       # Dibuja perro, caja, pájaro
+│       ├── powerups.js        # Dibuja power-ups
+│       ├── particles.js       # Actualiza y dibuja partículas
+│       ├── hud.js             # Puntaje, vidas, combo, power-ups activos
+│       └── index.js           # drawFrame(): compone todas las capas
+│
+├── hooks/                     # Integración de la lógica de juego con React
+│   ├── useGameEngine.js       # Orquestador: estado, game loop, spawns, colisiones
+│   ├── useCanvasSize.js       # Tamaño responsivo del canvas + detección móvil
+│   ├── useKeyboardControls.js # Flechas / espacio
+│   ├── useTouchControls.js    # Deslizar para mover, doble toque para saltar
+│   ├── useAudio.js            # Efectos de sonido sintetizados (Web Audio API)
+│   └── usePacoImage.js        # Precarga del sprite de Paco
+│
+└── components/                # Componentes de presentación (solo JSX)
+    ├── Header.js
+    ├── GameCanvas.js
+    ├── GameOverScreen.js
+    └── Footer.js
+```
 
-### `npm test`
+### Por qué esta separación
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- **`game/`** no importa React ni hooks: son funciones puras (entrada → salida).
+  Esto permite testearlas sin renderizar nada y reutilizarlas si el juego
+  cambiara de motor de render en el futuro.
+- **`hooks/`** conecta esa lógica con el ciclo de vida de React (refs, estado,
+  efectos). `useGameEngine` es el único lugar que sabe "cómo se junta todo".
+- **`components/`** solo reciben props y devuelven JSX. No tienen lógica de
+  juego ni acceden a refs del motor.
 
-### `npm run build`
+### Qué se limpió
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- `App.js` pasó de **1362 líneas monolíticas** a un archivo de composición de
+  ~50 líneas.
+- Se eliminó código muerto: había un intento de refactor anterior
+  (`components/Game.js`, `components/GameOver.js`, `hooks/useGameEngine.js`
+  viejo) que no estaba conectado a `index.js` y nunca se ejecutaba.
+- Se quitaron assets sin usar (`logo.svg`, `App.css` de la plantilla de
+  Create React App).
+- Se reemplazó el test de ejemplo de CRA (buscaba el texto "learn react",
+  que nunca existió en este juego) por una prueba real del juego.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Próximos pasos sugeridos
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- Extraer los estilos inline a CSS/CSS Modules.
+- Agregar tests unitarios a `game/collisions.js` y `game/entities.js`
+  (son funciones puras, son las más fáciles y valiosas de testear).
+- Mover los "magic numbers" que aún quedan en `useGameEngine.js` a `constants.js`.

@@ -1,158 +1,456 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  PLAYER_BASE,
+  SPAWN_RATES,
+  DIFFICULTY,
+  COMBO,
+  PHYSICS,
+  LEVELS,
+  LEVEL_BONUS_LIFE_EVERY,
+  MAX_LIVES,
+  STORAGE_KEYS,
+  getLevelForScore,
+} from '../game/constants';
+import { spawnFood, spawnObstacle, spawnPowerUp, spawnParticles } from '../game/entities';
+import { checkCollisions } from '../game/collisions';
+import { drawFrame } from '../game/render';
+import { useAudio } from './useAudio';
+import { useCanvasSize } from './useCanvasSize';
+import { useKeyboardControls } from './useKeyboardControls';
+import { useTouchControls } from './useTouchControls';
+import { usePacoImage } from './usePacoImage';
 
-export const useGameEngine = () => {
-  const [player, setPlayer] = useState({
-    x: 50,
-    y: 300,
-    width: 30,
-    height: 30,
-    velocityY: 0,
-    isJumping: false
+export function useGameEngine() {
+  const canvasRef = useRef(null);
+
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
+  // Estados: 'start' | 'playing' | 'paused' | 'gameOver'
+  const [gameState, setGameState] = useState('start');
+  const [highScore, setHighScore] = useState(() => {
+    const stored = Number(localStorage.getItem(STORAGE_KEYS.highScore));
+    return Number.isFinite(stored) ? stored : 0;
   });
-  
-  const [foods, setFoods] = useState([]);
-  const [obstacles, setObstacles] = useState([]);
-  const [gameSpeed, setGameSpeed] = useState(1);
+  const [highestLevel, setHighestLevel] = useState(() => {
+    const stored = Number(localStorage.getItem(STORAGE_KEYS.highestLevel));
+    return Number.isFinite(stored) && stored > 0 ? stored : 1;
+  });
+  const [combo, setCombo] = useState(1);
+  const [showCombo, setShowCombo] = useState(false);
+  const [comboPosition, setComboPosition] = useState({ x: 0, y: 0 });
+  const [backgroundTheme, setBackgroundTheme] = useState('day');
+  // Feedback visual cuando se rompe el combo
+  const [comboBroken, setComboBroken] = useState(false);
 
-  // Mover jugador
-  const movePlayer = useCallback((direction) => {
-    setPlayer(prev => {
-      let newX = prev.x;
-      if (direction === 'left' && prev.x > 0) {
-        newX = prev.x - 8;
-      } else if (direction === 'right' && prev.x < 770) {
-        newX = prev.x + 8;
+  // --- Sistema de niveles ---
+  const [level, setLevel] = useState(1);
+  const [levelName, setLevelName] = useState(LEVELS[0].name);
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const levelInfoRef = useRef(LEVELS[0]);
+  const levelNumberRef = useRef(1);
+  const levelUpTimeoutRef = useRef(null);
+
+  const pacoImageLoaded = usePacoImage();
+  const { playSound } = useAudio();
+
+  const playerRef = useRef({ ...PLAYER_BASE, velocityY: 0, isJumping: false, velocityX: 0, isMoving: false });
+  const { containerRef, canvasSize, isMobile } = useCanvasSize(playerRef);
+  const keysRef = useKeyboardControls(isMobile);
+
+  const foodsRef = useRef([]);
+  const obstaclesRef = useRef([]);
+  const particlesRef = useRef([]);
+  const powerUpsRef = useRef([]);
+  const gameSpeedRef = useRef(1);
+  const animationFrameRef = useRef(null);
+  const lastTimeRef = useRef(0);
+  const foodTimerRef = useRef(0);
+  const obstacleTimerRef = useRef(0);
+  const powerUpTimerRef = useRef(0);
+  const collectedFoodsRef = useRef(new Set());
+  const hitObstaclesRef = useRef(new Set());
+  const activePowerUpsRef = useRef(new Set());
+  const lastComboTimeRef = useRef(0);
+  // Ref para leer el score más reciente en callbacks sin closure stale
+  const scoreRef = useRef(0);
+  const prevKeyStateRef = useRef({});
+
+  // Revisa si el puntaje actual cruzó el umbral del siguiente nivel y, de ser
+  // así, aplica el salto de dificultad, el cambio de ambiente, el sonido/toast
+  // y una posible vida extra.
+  const checkLevelProgress = useCallback(
+    (currentScore) => {
+      const levelData = getLevelForScore(currentScore);
+      if (levelData.level === levelNumberRef.current) return;
+
+      levelNumberRef.current = levelData.level;
+      levelInfoRef.current = levelData;
+      setLevel(levelData.level);
+      setLevelName(levelData.name);
+      setBackgroundTheme(levelData.theme);
+
+      setHighestLevel((prev) => {
+        const updated = Math.max(prev, levelData.level);
+        localStorage.setItem(STORAGE_KEYS.highestLevel, String(updated));
+        return updated;
+      });
+
+      playSound('levelUp');
+      setShowLevelUp(true);
+      clearTimeout(levelUpTimeoutRef.current);
+      levelUpTimeoutRef.current = setTimeout(() => setShowLevelUp(false), 2200);
+
+      if (levelData.level % LEVEL_BONUS_LIFE_EVERY === 0) {
+        setLives((prev) => {
+          if (prev >= MAX_LIVES) return prev;
+          playSound('extraLife');
+          return prev + 1;
+        });
       }
-      return { ...prev, x: newX };
+    },
+    [playSound]
+  );
+
+  const spawnParticlesInto = useCallback(
+    (x, y, color, count = 5) => {
+      const scale = canvasSize.width / 800;
+      particlesRef.current.push(...spawnParticles(x, y, color, count, scale));
+    },
+    [canvasSize.width]
+  );
+
+  useTouchControls({
+    canvasRef,
+    playerRef,
+    canvasSize,
+    isMobile,
+    playSound,
+    spawnJumpParticles: (x, y, count) => spawnParticlesInto(x, y, '#ffffff', count),
+  });
+
+  const createPowerUp = useCallback(() => {
+    const scale = canvasSize.width / 800;
+    powerUpsRef.current.push(spawnPowerUp(canvasSize.width, scale));
+  }, [canvasSize.width]);
+
+  const applyPowerUp = useCallback(
+    (powerUp) => {
+      playSound('powerUp');
+      activePowerUpsRef.current.add(powerUp.type);
+      spawnParticlesInto(powerUp.x, powerUp.y, powerUp.color, 15);
+
+      setTimeout(() => {
+        activePowerUpsRef.current.delete(powerUp.type);
+      }, powerUp.duration);
+    },
+    [playSound, spawnParticlesInto]
+  );
+
+  const applyCollisionEvents = useCallback(
+    (events) => {
+      const currentTime = Date.now();
+
+      events.collectedFoods.forEach((food) => {
+        if (currentTime - lastComboTimeRef.current < COMBO.windowMs) {
+          setCombo((prev) => prev + 1);
+        } else {
+          setCombo(2);
+        }
+        lastComboTimeRef.current = currentTime;
+
+        setShowCombo(true);
+        setComboPosition({ x: food.x, y: food.y - 20 });
+        setTimeout(() => setShowCombo(false), 1000);
+
+        const multiplier = activePowerUpsRef.current.has('doublePoints') ? 2 : 1;
+        // Leer combo actual del ref para evitar closure stale
+        setCombo((prevCombo) => {
+          const comboMultiplier = Math.min(prevCombo, COMBO.maxMultiplier);
+          const totalPoints = COMBO.basePoints * multiplier * comboMultiplier;
+
+          setScore((prev) => {
+            const newScore = prev + totalPoints;
+            scoreRef.current = newScore;
+            checkLevelProgress(newScore);
+            return newScore;
+          });
+
+          if (prevCombo > 2) {
+            playSound('collectCombo');
+            spawnParticlesInto(food.x, food.y, '#ffeb3b', 10);
+          } else {
+            playSound('collect');
+            spawnParticlesInto(food.x, food.y, '#ff6b6b', 5);
+          }
+
+          return prevCombo;
+        });
+      });
+
+      events.collectedPowerUps.forEach((powerUp) => applyPowerUp(powerUp));
+
+      events.hitObstacles.forEach((obstacle) => {
+        playSound('hit');
+        spawnParticlesInto(obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height / 2, '#ff4444', 8);
+
+        // Feedback visual de combo roto
+        setCombo((prev) => {
+          if (prev > 1) {
+            setComboBroken(true);
+            setTimeout(() => setComboBroken(false), 800);
+          }
+          return 1;
+        });
+
+        setLives((prev) => {
+          const newLives = prev - 1;
+          if (newLives <= 0) {
+            playSound('gameOver');
+            setGameState('gameOver');
+            // Leer el score más reciente desde el ref, no desde el closure
+            setHighScore((current) => {
+              const updated = Math.max(current, scoreRef.current);
+              localStorage.setItem(STORAGE_KEYS.highScore, String(updated));
+              return updated;
+            });
+          }
+          return Math.max(0, newLives);
+        });
+      });
+    },
+    [playSound, spawnParticlesInto, applyPowerUp, checkLevelProgress]
+  );
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const scale = canvasSize.width / 800;
+
+    particlesRef.current = drawFrame(ctx, canvas, {
+      scale,
+      isMobile,
+      backgroundTheme,
+      player: playerRef.current,
+      foods: foodsRef.current,
+      obstacles: obstaclesRef.current,
+      powerUps: powerUpsRef.current,
+      particles: particlesRef.current,
+      activePowerUps: activePowerUpsRef.current,
+      hud: {
+        score,
+        lives,
+        combo,
+        showCombo,
+        comboPosition,
+        backgroundTheme,
+        activePowerUps: activePowerUpsRef.current,
+        comboBroken,
+        level,
+        levelName,
+        showLevelUp,
+      },
+    });
+  }, [canvasSize.width, isMobile, backgroundTheme, score, lives, combo, showCombo, comboPosition, comboBroken, level, levelName, showLevelUp]);
+
+  const gameLoop = useCallback(
+    (timestamp) => {
+      if (gameState !== 'playing') return;
+
+      const deltaTime = Math.min(timestamp - lastTimeRef.current, PHYSICS.maxDeltaMs);
+      lastTimeRef.current = timestamp;
+
+      const player = playerRef.current;
+      const scale = canvasSize.width / 800;
+      const timeScale = activePowerUpsRef.current.has('slowMotion') ? 0.5 : 1;
+      const scaledDeltaTime = deltaTime * timeScale;
+
+      // --- Pausa con teclado (Escape o P) ---
+      const keys = keysRef.current;
+      const pausePressed = keys['Escape'] || keys['p'] || keys['P'];
+      const wasPausePressed = prevKeyStateRef.current['Escape'] || prevKeyStateRef.current['p'] || prevKeyStateRef.current['P'];
+      if (pausePressed && !wasPausePressed) {
+        prevKeyStateRef.current = { ...keys };
+        setGameState('paused');
+        return;
+      }
+      prevKeyStateRef.current = { ...keys };
+
+      if (!isMobile) {
+        player.isMoving = false;
+        if (keys['ArrowLeft'] && player.x > 0) {
+          player.x -= PHYSICS.moveSpeed * scale * timeScale;
+          player.isMoving = true;
+        }
+        if (keys['ArrowRight'] && player.x < canvasSize.width - player.width) {
+          player.x += PHYSICS.moveSpeed * scale * timeScale;
+          player.isMoving = true;
+        }
+        if ((keys['ArrowUp'] || keys[' ']) && !player.isJumping) {
+          player.velocityY = PHYSICS.jumpVelocity * scale;
+          player.isJumping = true;
+          playSound('jump');
+          spawnParticlesInto(player.x + player.width / 2, player.y + player.height, '#ffffff', 3);
+        }
+      }
+
+      if (player.isJumping) {
+        player.velocityY += PHYSICS.gravity * scale * timeScale;
+        player.y += player.velocityY * timeScale;
+
+        const groundY = canvasSize.height - PHYSICS.groundOffset * (canvasSize.height / 400);
+        if (player.y >= groundY) {
+          player.y = groundY;
+          player.velocityY = 0;
+          player.isJumping = false;
+          if (player.velocityY > 5) {
+            spawnParticlesInto(player.x + player.width / 2, player.y + player.height, '#8b4513', 4);
+          }
+        }
+      }
+
+      const levelSpeedMult = levelInfoRef.current.speedMultiplier;
+      const levelSpawnMult = levelInfoRef.current.spawnMultiplier;
+      const effectiveGameSpeed = gameSpeedRef.current * levelSpeedMult;
+
+      foodTimerRef.current += scaledDeltaTime;
+      if (foodTimerRef.current > SPAWN_RATES.foodIntervalMs / (gameSpeedRef.current * levelSpawnMult)) {
+        foodTimerRef.current = 0;
+        foodsRef.current.push(spawnFood(canvasSize.width, effectiveGameSpeed));
+      }
+
+      obstacleTimerRef.current += scaledDeltaTime;
+      if (obstacleTimerRef.current > SPAWN_RATES.obstacleIntervalMs / (gameSpeedRef.current * levelSpawnMult)) {
+        obstacleTimerRef.current = 0;
+        obstaclesRef.current.push(spawnObstacle(canvasSize.width, scale, effectiveGameSpeed, timeScale));
+      }
+
+      powerUpTimerRef.current += scaledDeltaTime;
+      if (powerUpTimerRef.current > SPAWN_RATES.powerUpIntervalMs / gameSpeedRef.current && Math.random() < SPAWN_RATES.powerUpChance) {
+        powerUpTimerRef.current = 0;
+        createPowerUp();
+      }
+
+      foodsRef.current = foodsRef.current
+        .map((food) => ({ ...food, y: food.y + food.speed * timeScale }))
+        .filter((food) => food.y < canvasSize.height);
+
+      obstaclesRef.current = obstaclesRef.current
+        .map((obstacle) => ({ ...obstacle, y: obstacle.y + obstacle.speed * timeScale }))
+        .filter((obstacle) => obstacle.y < canvasSize.height + 50);
+
+      powerUpsRef.current = powerUpsRef.current
+        .map((powerUp) => ({ ...powerUp, y: powerUp.y + powerUp.speed * timeScale }))
+        .filter((powerUp) => powerUp.y < canvasSize.height);
+
+      if (timestamp % DIFFICULTY.increaseEveryMs < 16) {
+        gameSpeedRef.current = Math.min(gameSpeedRef.current + DIFFICULTY.speedIncrement, DIFFICULTY.maxGameSpeed);
+      }
+
+      if (timestamp - lastComboTimeRef.current > COMBO.windowMs) {
+        setCombo(1);
+      }
+
+      const events = checkCollisions({
+        player,
+        foods: foodsRef.current,
+        powerUps: powerUpsRef.current,
+        obstacles: obstaclesRef.current,
+        collectedFoods: collectedFoodsRef.current,
+        hitObstacles: hitObstaclesRef.current,
+        shieldActive: activePowerUpsRef.current.has('shield'),
+      });
+      applyCollisionEvents(events);
+
+      draw();
+
+      animationFrameRef.current = requestAnimationFrame(gameLoop);
+    },
+    [gameState, draw, applyCollisionEvents, playSound, spawnParticlesInto, createPowerUp, canvasSize, isMobile, keysRef]
+  );
+
+  const resetGameState = useCallback(() => {
+    const scale = canvasSize.width / 800;
+    playerRef.current = {
+      x: PLAYER_BASE.x * scale,
+      y: isMobile ? canvasSize.height - 80 : (PLAYER_BASE.y * canvasSize.height) / 400,
+      width: PLAYER_BASE.width * scale,
+      height: PLAYER_BASE.height * (canvasSize.height / 400),
+      velocityY: 0,
+      isJumping: false,
+      velocityX: 0,
+      isMoving: false,
+    };
+    foodsRef.current = [];
+    obstaclesRef.current = [];
+    powerUpsRef.current = [];
+    particlesRef.current = [];
+    gameSpeedRef.current = 1;
+    collectedFoodsRef.current.clear();
+    hitObstaclesRef.current.clear();
+    activePowerUpsRef.current.clear();
+    scoreRef.current = 0;
+    setScore(0);
+    setLives(3);
+    setCombo(1);
+    setShowCombo(false);
+    setComboBroken(false);
+    setBackgroundTheme('day');
+
+    levelNumberRef.current = 1;
+    levelInfoRef.current = LEVELS[0];
+    setLevel(1);
+    setLevelName(LEVELS[0].name);
+    setShowLevelUp(false);
+    clearTimeout(levelUpTimeoutRef.current);
+  }, [canvasSize, isMobile]);
+
+  const startGame = useCallback(() => {
+    resetGameState();
+    setGameState('playing');
+  }, [resetGameState]);
+
+  const restartGame = useCallback(() => {
+    resetGameState();
+    setGameState('playing');
+  }, [resetGameState]);
+
+  const togglePause = useCallback(() => {
+    setGameState((prev) => {
+      if (prev === 'playing') return 'paused';
+      if (prev === 'paused') return 'playing';
+      return prev;
     });
   }, []);
 
-  // Saltar
-  const jumpPlayer = useCallback(() => {
-    if (!player.isJumping) {
-      setPlayer(prev => ({
-        ...prev,
-        velocityY: -15,
-        isJumping: true
-      }));
+  useEffect(() => {
+    if (gameState === 'playing') {
+      lastTimeRef.current = performance.now();
+      animationFrameRef.current = requestAnimationFrame(gameLoop);
     }
-  }, [player.isJumping]);
-
-  // Gravedad
-  useEffect(() => {
-    const gravityInterval = setInterval(() => {
-      setPlayer(prev => {
-        if (prev.isJumping) {
-          const newY = prev.y + prev.velocityY;
-          const newVelocityY = prev.velocityY + 0.8;
-          
-          // Verificar si llegó al suelo
-          if (newY >= 300) {
-            return {
-              ...prev,
-              y: 300,
-              velocityY: 0,
-              isJumping: false
-            };
-          }
-          
-          return {
-            ...prev,
-            y: newY,
-            velocityY: newVelocityY
-          };
-        }
-        return prev;
-      });
-    }, 30);
-    
-    return () => clearInterval(gravityInterval);
-  }, []);
-
-  // Generar comida
-  useEffect(() => {
-    const foodInterval = setInterval(() => {
-      const foodTypes = ['fish', 'milk', 'croquettes'];
-      const type = foodTypes[Math.floor(Math.random() * foodTypes.length)];
-      
-      const newFood = {
-        id: Date.now(),
-        type,
-        x: Math.random() * 700 + 50,
-        y: -20,
-        speed: 3 + Math.random() * 2 * gameSpeed
-      };
-      
-      setFoods(prev => [...prev, newFood]);
-    }, 2000 / gameSpeed);
-    
-    return () => clearInterval(foodInterval);
-  }, [gameSpeed]);
-
-  // Generar obstáculos
-  useEffect(() => {
-    const obstacleInterval = setInterval(() => {
-      const obstacleTypes = ['dog', 'box'];
-      const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
-      
-      const newObstacle = {
-        id: Date.now(),
-        type,
-        x: 800,
-        y: type === 'dog' ? 280 : 270,
-        width: type === 'dog' ? 40 : 50,
-        height: type === 'dog' ? 20 : 30,
-        speed: 2 + Math.random() * 2 * gameSpeed
-      };
-      
-      setObstacles(prev => [...prev, newObstacle]);
-    }, 3000 / gameSpeed);
-    
-    return () => clearInterval(obstacleInterval);
-  }, [gameSpeed]);
-
-  // Mover comida y obstáculos
-  useEffect(() => {
-    const movementInterval = setInterval(() => {
-      // Mover comida
-      setFoods(prev => 
-        prev
-          .map(food => ({
-            ...food,
-            y: food.y + food.speed
-          }))
-          .filter(food => food.y < 400) // Eliminar comida que sale de pantalla
-      );
-      
-      // Mover obstáculos
-      setObstacles(prev =>
-        prev
-          .map(obstacle => ({
-            ...obstacle,
-            x: obstacle.x - obstacle.speed
-          }))
-          .filter(obstacle => obstacle.x > -50) // Eliminar obstáculos que salen de pantalla
-      );
-    }, 30);
-    
-    return () => clearInterval(movementInterval);
-  }, []);
-
-  // Aumentar dificultad
-  useEffect(() => {
-    const difficultyInterval = setInterval(() => {
-      setGameSpeed(prev => Math.min(prev + 0.1, 3)); // Máximo 3x velocidad
-    }, 10000); // Cada 10 segundos
-    
-    return () => clearInterval(difficultyInterval);
-  }, []);
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [gameState, gameLoop]);
 
   return {
-    player,
-    foods,
-    obstacles,
-    movePlayer,
-    jumpPlayer,
-    gameSpeed
+    canvasRef,
+    containerRef,
+    canvasSize,
+    isMobile,
+    pacoImageLoaded,
+    score,
+    lives,
+    highScore,
+    highestLevel,
+    level,
+    levelName,
+    gameState,
+    backgroundTheme,
+    startGame,
+    restartGame,
+    togglePause,
   };
-};
+}
