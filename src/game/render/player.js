@@ -1,4 +1,62 @@
-export function drawCat(ctx, x, y, width, height, scale, activePowerUps) {
+// Dibuja al jugador usando el sprite ilustrado (paco.png) cuando está
+// disponible, con una leve inclinación dinámica basada en la velocidad
+// vertical para que no se sienta como una imagen estática pegada en pantalla.
+// Si el sprite no cargó (o falló), cae de vuelta al dibujo vectorial original.
+export function drawCat(ctx, x, y, width, height, scale, activePowerUps, pacoImage, velocityY = 0) {
+  if (!pacoImage) {
+    drawCatVector(ctx, x, y, width, height, scale, activePowerUps);
+    return;
+  }
+
+  ctx.save();
+
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+
+  // Aro de escudo (se mantiene igual que en el dibujo vectorial).
+  if (activePowerUps.has('shield')) {
+    ctx.shadowColor = '#4a90e2';
+    ctx.shadowBlur = 20 * scale;
+    ctx.strokeStyle = '#4a90e2';
+    ctx.lineWidth = 3 * scale;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 35 * scale, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Brillo distintivo para power-ups que no tienen una silueta propia que
+  // dibujar sobre el sprite (a diferencia del dibujo vectorial, que
+  // dibujaba lentes/ojos directamente sobre la cara).
+  if (activePowerUps.has('slowMotion')) {
+    ctx.shadowColor = '#90ee90';
+    ctx.shadowBlur = 18 * scale;
+  } else if (activePowerUps.has('doublePoints')) {
+    ctx.shadowColor = '#ffeb3b';
+    ctx.shadowBlur = 18 * scale;
+  }
+
+  // Inclinación según la velocidad vertical: se echa hacia atrás al saltar
+  // y se inclina hacia adelante al caer, dando sensación de peso y movimiento.
+  const tilt = Math.max(-0.25, Math.min(0.25, velocityY * 0.02));
+
+  ctx.translate(centerX, centerY);
+  ctx.rotate(tilt);
+
+  // El sprite trae bastante marco/escudo transparente alrededor de la cara,
+  // así que se dibuja más grande que el hitbox para que el gato se vea a
+  // un tamaño comparable al dibujo anterior. El hitbox de colisión (x/y/
+  // width/height) no cambia: esto es puramente cosmético.
+  const drawWidth = width * 1.9;
+  const aspect = pacoImage.naturalHeight / pacoImage.naturalWidth || 1.5;
+  const drawHeight = drawWidth * aspect;
+
+  ctx.drawImage(pacoImage, -drawWidth / 2, -drawHeight / 2 - height * 0.15, drawWidth, drawHeight);
+
+  ctx.restore();
+}
+
+function drawCatVector(ctx, x, y, width, height, scale, activePowerUps) {
   ctx.save();
 
   if (activePowerUps.has('shield')) {

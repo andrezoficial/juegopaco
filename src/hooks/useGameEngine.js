@@ -50,7 +50,7 @@ export function useGameEngine() {
   const levelNumberRef = useRef(1);
   const levelUpTimeoutRef = useRef(null);
 
-  const pacoImageLoaded = usePacoImage();
+  const { pacoImageLoaded, pacoImageRef } = usePacoImage();
   const { playSound } = useAudio();
 
   const playerRef = useRef({ ...PLAYER_BASE, velocityY: 0, isJumping: false, velocityX: 0, isMoving: false });
@@ -232,6 +232,7 @@ export function useGameEngine() {
       isMobile,
       backgroundTheme,
       player: playerRef.current,
+      pacoImage: pacoImageRef.current,
       foods: foodsRef.current,
       obstacles: obstaclesRef.current,
       powerUps: powerUpsRef.current,

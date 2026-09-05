@@ -13,7 +13,7 @@ export { drawBackground, drawFood, drawObstacle, drawPowerUp, drawParticles, dra
  * -> partículas -> jugador -> HUD -> overlay de pausa (si aplica).
  * Devuelve el array de partículas vivas para que el caller actualice el ref.
  */
-export function drawFrame(ctx, canvas, { scale, isMobile, backgroundTheme, player, foods, obstacles, powerUps, particles, activePowerUps, hud, isPaused }) {
+export function drawFrame(ctx, canvas, { scale, isMobile, backgroundTheme, player, pacoImage, foods, obstacles, powerUps, particles, activePowerUps, hud, isPaused }) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   drawBackground(ctx, canvas, scale, backgroundTheme, isMobile);
@@ -30,7 +30,7 @@ export function drawFrame(ctx, canvas, { scale, isMobile, backgroundTheme, playe
 
   const aliveParticles = drawParticles(ctx, particles);
 
-  drawCat(ctx, player.x, player.y, player.width, player.height, scale, activePowerUps);
+  drawCat(ctx, player.x, player.y, player.width, player.height, scale, activePowerUps, pacoImage, player.velocityY);
 
   drawHUD(ctx, canvas, scale, hud);
 

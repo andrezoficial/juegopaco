@@ -37,7 +37,7 @@ const App = () => {
         alignItems: 'center',
         justifyContent: 'center',
         padding: isMobile ? '5px' : '20px',
-        fontFamily: 'Arial, sans-serif',
+        fontFamily: "'Baloo 2', sans-serif",
         overflow: 'hidden',
         position: 'relative',
         width: '100vw',

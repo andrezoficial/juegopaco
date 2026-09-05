@@ -111,6 +111,11 @@ export const OBSTACLE_CONFIG = {
 };
 export const OBSTACLE_TYPES = Object.keys(OBSTACLE_CONFIG);
 
+// Fuente usada en todo el canvas (HUD, banners). Debe coincidir con la
+// declarada en index.css para que el resto de la UI (React) se vea consistente.
+export const FONT_FAMILY = "'Baloo 2', sans-serif";
+
+
 export const POWERUP_TYPES = [
   { type: 'shield', color: '#4a90e2', duration: 5000 },
   { type: 'doublePoints', color: '#ffeb3b', duration: 8000 },

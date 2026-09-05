@@ -1,6 +1,7 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Paco",
+  "name": "Paco en la Ciudad",
+  "description": "Juego arcade 2D: esquiva obstáculos, recolecta comida y encadena combos con Paco el gato.",
   "icons": [
     {
       "src": "favicon.ico",
@@ -20,6 +21,7 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#667eea",
+  "background_color": "#764ba2",
+  "orientation": "landscape"
 }
